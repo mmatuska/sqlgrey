@@ -1,0 +1,11 @@
+#####################
+## Database schema ##
+#####################
+
+* After some time I've noticed entries like this one in my from_awl;
+-undef- | -undef- | aaa.bbb.ccc.ddd | xxxx-xx-xx xx:xx:xx.xxxxxx
+
+This is expected. Mail servers send you e-mail notices when they can't deliver
+your messages. When doing so, the Return-Path is empty.
+As at least MySQL doesn't support NULL in PRIMARY KEYs, SQLgrey creates these
+'-undef- | -undef-' entries to recognise these cases.
