@@ -1,4 +1,5 @@
 1.4.4
+- emulate missing -t in mktemp
 - more support for VERP style return-paths
 - tune for SRS (SES and BATV too ?)
 - send mails (adjustable rate) to postmaster when the database goes down and comes back
