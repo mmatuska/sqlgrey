@@ -1,0 +1,45 @@
+#!/bin/sh
+#
+# sqlgrey:        Init script for sqlgrey postfix policy service
+#
+# chkconfig: 345 90 10
+# description: SQLgrey is a postfix grey-listing policy service.
+
+# Source function library.
+. /etc/rc.d/init.d/functions
+# Source network list
+[ ! -f /etc/sysconfig/sqlgrey ] && (echo "Error: missing /etc/sysconfig/sqlgrey"; exit 1)
+. /etc/sysconfig/sqlgrey
+
+# See how we were called.
+case "$1" in
+  start)
+	echo -n "Starting SQLgrey: "
+	sqlgrey -d --db-type=$DBTYPE --inet=$INET
+	echo_success
+	echo
+	;;
+
+  stop)
+	echo -n "Shutting down SQLgrey: "
+	sqlgrey -k
+	echo_success
+	echo
+	;;
+
+  status)
+	status sqlgrey
+	;;
+
+  restart)
+	$0 stop
+	$0 start
+	;;
+
+  *)
+	echo "Usage: sqlgrey {start|stop|status|restart}"
+	exit 1
+esac
+
+exit 0
+
