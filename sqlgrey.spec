@@ -1,5 +1,5 @@
 %define name sqlgrey
-%define ver  1.3.2
+%define ver  1.3.3
 %define rel  1
 
 Summary:   SQLgrey is a postfix grey-listing policy service.

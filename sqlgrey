@@ -33,7 +33,7 @@ use DBI;
 use vars qw(@ISA);
 @ISA = qw(Net::Server::Multiplex);
 
-my $VERSION='1.3.1';
+my $VERSION='1.3.3';
 
 my $DB_VERSION = 1;
 
@@ -72,14 +72,45 @@ my $config_file           = '/etc/sqlgrey/sqlgrey.conf';
 sub do {
     my $self = shift;
     my $query = shift;
-    my $dbh = $self->{sqlgrey}{dbh};
+    my $result;
 
-    if (! $dbh->do($query)) {
+    if (!defined $self->{sqlgrey}{dbh}) {
+	$self->connectdb();
+    }
+    if (!defined $self->{sqlgrey}{dbh} or
+	!($result = $self->{sqlgrey}{dbh}->do($query))) {
 	# failure
         $self->log(2, "Warning: couldn't do query:\n" .
 		   "$query:\n" .
 		   "$DBI::errstr, reconnecting to DB");
 	$self->connectdb();
+	return undef;
+    } else {
+	return $result;
+    }
+}
+
+sub prepare_cached {
+    my $self = shift;
+    my $query = shift;
+
+    if (!defined $self->{sqlgrey}{dbh}) {
+	$self->connectdb();
+    }
+    if (!defined $self->{sqlgrey}{dbh}) {
+	return undef;
+    } else {
+	return $self->{sqlgrey}{dbh}->prepare_cached($query);
+    }
+}
+
+sub quote {
+    my $self = shift;
+    my $toquote = shift;
+    if (! defined $self->{sqlgrey}{dbh}) {
+	return "NULL";
+    } else {
+	return $self->{sqlgrey}{dbh}->quote($toquote);
     }
 }
 
@@ -89,7 +120,7 @@ sub table_exists {
     my $tablename = shift;
     # Seems the most portable way to do it
     # but needs SQL error reporting off at connect time :-<
-    $self->{sqlgrey}->{dbh}->do("SELECT 1 from $tablename LIMIT 0")
+    $self->do("SELECT 1 from $tablename LIMIT 0")
         or return 0;
     return 1;
 }
@@ -154,10 +185,9 @@ sub getconfig {
     my $self = shift;
     my $param = shift;
 
-    my $sth = $self->{sqlgrey}{dbh}->prepare(
-		     "SELECT value FROM $config " .
-		     "WHERE parameter = ?");
-    if (!$sth->execute($param)) {
+    my $sth = $self->prepare_cached("SELECT value FROM $config " .
+				    "WHERE parameter = ?");
+    if (!defined $sth or !$sth->execute($param)) {
 	$self->log(2, "Error: couldn't access $config table: $DBI::errstr");
 	die "Can't continue: config table unreadable\n";
     }
@@ -175,10 +205,9 @@ sub setconfig {
     my $param = shift;
     my $value = shift;
 
-    my $sth = $self->{sqlgrey}{dbh}->prepare(
-		     "SELECT value FROM $config " .
-		     "WHERE parameter = ?");
-    if (!$sth->execute($param)) {
+    my $sth = $self->prepare_cached("SELECT value FROM $config " .
+				    "WHERE parameter = ?");
+    if (!defined $sth or !$sth->execute($param)) {
 	$self->log(2, "Error: couldn't access $config table: $DBI::errstr");
 	die "Can't continue: config table unreadable\n";
     }
@@ -197,10 +226,10 @@ sub updateconfig {
     my $value = shift;
     my $dbh = $self->{sqlgrey}{dbh};
 
-    $self->do("UPDATE $config SET value = " .
-	      $dbh->quote($value) .
-	      " WHERE parameter = " .
-	      $dbh->quote($param));
+    return $self->do("UPDATE $config SET value = " .
+		     $self->quote($value) .
+		     " WHERE parameter = " .
+		     $self->quote($param));
 }
 
 sub insertconfig() {
@@ -209,9 +238,9 @@ sub insertconfig() {
     my $value = shift;
     my $dbh = $self->{sqlgrey}{dbh};
 
-    $self->do("INSERT INTO $config (parameter, value) VALUES(" .
-	      $dbh->quote($param) . "," .
-	      $dbh->quote($value) . ")");
+    return $self->do("INSERT INTO $config (parameter, value) VALUES(" .
+		     $self->quote($param) . "," .
+		     $self->quote($value) . ")");
 }
 
 sub currentdbversion() {
@@ -339,13 +368,14 @@ sub initdb {
 sub connectdb {
     my $self = shift;
     my $db_type = $self->{sqlgrey}{db_type};
-    $self->{sqlgrey}{dbh} = DBI->connect($self->cnctinfo(),
-					  $self->{sqlgrey}{db_user},
-					  $self->{sqlgrey}{db_pass},
-                                        { PrintError => 0,
-					  AutoCommit => 1 }
-                                        )
+    $self->{sqlgrey}{dbh} = DBI->connect_cached($self->cnctinfo(),
+						$self->{sqlgrey}{db_user},
+						$self->{sqlgrey}{db_pass},
+						{ PrintError => 0,
+						  AutoCommit => 1 }
+					       )
 	or $self->log(2, "Can't connect to DB: $DBI::errstr");
+
     # mysql drops the connection, we have some glue code
     # to reinit the connection, but better use mysql DBD code
     if ($db_type eq "mysql") {
@@ -353,8 +383,8 @@ sub connectdb {
     }
     # Create "now()" function for SQLite
     if ($db_type eq "SQLite") {
-        $self->{sqlgrey}{dbh}->func( 'now', 0, sub { return time },
-				     'create_function' );
+        $self->{sqlgrey}{dbh}->func('now', 0, sub { return time },
+				    'create_function' );
     }
 }
 
@@ -364,23 +394,23 @@ sub connectdb {
 
 sub create_from_awl_table {
     my $self = shift;
-    $self->{sqlgrey}->{dbh}->do("CREATE TABLE $from_awl " .
-				"(sender_name varchar(64) NOT NULL, " .
-				"sender_domain varchar(255) NOT NULL, " .
-				"host_ip varchar(15) NOT NULL, " .
-				"last_seen timestamp NOT NULL, " .
-				"PRIMARY KEY " .
-				"(sender_name, sender_domain, host_ip));")
+    $self->do("CREATE TABLE $from_awl " .
+	      "(sender_name varchar(64) NOT NULL, " .
+	      "sender_domain varchar(255) NOT NULL, " .
+	      "host_ip varchar(15) NOT NULL, " .
+	      "last_seen timestamp NOT NULL, " .
+	      "PRIMARY KEY " .
+	      "(sender_name, sender_domain, host_ip));")
 	or die "Couldn't create table $from_awl: $DBI::errstr\n";
 }
 
 sub create_domain_awl_table {
     my $self = shift;
-    $self->{sqlgrey}->{dbh}->do("CREATE TABLE $domain_awl " .
-				"(sender_domain varchar(255) NOT NULL, " .
-				"host_ip varchar(15) NOT NULL, " .
-				"last_seen timestamp NOT NULL, " .
-				"PRIMARY KEY (sender_domain, host_ip));")
+    $self->do("CREATE TABLE $domain_awl " .
+	      "(sender_domain varchar(255) NOT NULL, " .
+	      "host_ip varchar(15) NOT NULL, " .
+	      "last_seen timestamp NOT NULL, " .
+	      "PRIMARY KEY (sender_domain, host_ip));")
 	or die "Couldn't create table $from_awl: $DBI::errstr\n";
 }
 
@@ -388,21 +418,21 @@ sub create_connect_table {
     my $self = shift;
     # Note: no primary key, Mysql can't handle 500+ byte primary keys
     # connect should not become big enough to make it a problem
-    $self->{sqlgrey}->{dbh}->do("CREATE TABLE $connect " .
-				"(sender_name varchar(64) NOT NULL, " .
-				"sender_domain varchar(255) NOT NULL, " .
-				"ip_addr varchar(15) NOT NULL, " .
-				"rcpt varchar(255) NOT NULL, " .
-				"first_seen timestamp NOT NULL);")
+    $self->do("CREATE TABLE $connect " .
+	      "(sender_name varchar(64) NOT NULL, " .
+	      "sender_domain varchar(255) NOT NULL, " .
+	      "ip_addr varchar(15) NOT NULL, " .
+	      "rcpt varchar(255) NOT NULL, " .
+	      "first_seen timestamp NOT NULL);")
 	or die "Couldn't create table $connect: $DBI::errstr\n";
 }
 
 sub create_config_table {
     my $self = shift;
-    $self->{sqlgrey}->{dbh}->do("CREATE TABLE $config " .
-				"(parameter varchar(255) NOT NULL, " .
-				"value varchar(255), " .
-				"PRIMARY KEY (parameter));")
+    $self->do("CREATE TABLE $config " .
+	      "(parameter varchar(255) NOT NULL, " .
+	      "value varchar(255), " .
+	      "PRIMARY KEY (parameter));")
         or die "Couldn't create table $config: $DBI::errstr\n";
 }
 
@@ -472,18 +502,17 @@ sub normalize_rcpt {
 
 sub is_in_from_awl {
     my ($self, $sender_name, $sender_domain, $host) = @_;
-    my $dbh = $self->{sqlgrey}{dbh};
 
     # last_seen less than $self->{sqlgrey}{awl_age} days ago
-    my $sth = $dbh->prepare("SELECT 1 FROM $from_awl " .
-			    "WHERE sender_name = ? " .
-			    "AND sender_domain = ? " .
-			    "AND host_ip = ? " .
-			    "AND last_seen > now() - " .
-			    $self->interval($self->{sqlgrey}{awl_age},
-					    "DAY")
-			   );
-    if (! $sth->execute($sender_name, $sender_domain, $host)) {
+    my $sth = $self->prepare_cached("SELECT 1 FROM $from_awl " .
+				    "WHERE sender_name = ? " .
+				    "AND sender_domain = ? " .
+				    "AND host_ip = ? " .
+				    "AND last_seen > now() - " .
+				    $self->interval($self->{sqlgrey}{awl_age},
+						    "DAY")
+				   );
+    if (!defined $sth or !$sth->execute($sender_name, $sender_domain, $host)) {
 	$self->log(1, "Error: couldn't access $from_awl table: $DBI::errstr");
 	$self->connectdb();
         return 1; # in doubt, accept
@@ -498,17 +527,16 @@ sub is_in_from_awl {
 
 sub is_in_domain_awl {
     my ($self, $sender_domain, $host) = @_;
-    my $dbh = $self->{sqlgrey}{dbh};
 
     # last_seen less than $self->{sqlgrey}{awl_age} days ago
-    my $sth = $dbh->prepare("SELECT 1 FROM $domain_awl " .
-			    "WHERE sender_domain = ? " .
-			    "AND host_ip = ? " .
-			    "AND last_seen > now() - " .
-			    $self->interval($self->{sqlgrey}{awl_age},
-					    "DAY")
-			   );
-    if (!$sth->execute($sender_domain, $host)) {
+    my $sth = $self->prepare_cached("SELECT 1 FROM $domain_awl " .
+				    "WHERE sender_domain = ? " .
+				    "AND host_ip = ? " .
+				    "AND last_seen > now() - " .
+				    $self->interval($self->{sqlgrey}{awl_age},
+						    "DAY")
+				   );
+    if (!defined $sth or !$sth->execute($sender_domain, $host)) {
 	$self->log(1, "Error: couldn't access $domain_awl table: $DBI::errstr");
 	$self->connectdb();
         return 1; # in doubt, accept
@@ -529,16 +557,16 @@ sub put_in_from_awl {
 
     # delete old entries
     $self->do("DELETE FROM $from_awl " .
-	      "WHERE sender_name = " . $dbh->quote($sender_name) .
-	      " AND sender_domain = " . $dbh->quote($sender_domain) .
-	      " AND host_ip = " . $dbh->quote($host));
+	      "WHERE sender_name = " . $self->quote($sender_name) .
+	      " AND sender_domain = " . $self->quote($sender_domain) .
+	      " AND host_ip = " . $self->quote($host));
 
     # create new entry
     $self->do("INSERT INTO $from_awl (sender_name, sender_domain, " .
 	      "host_ip, last_seen) VALUES(" .
-	      $dbh->quote($sender_name) . "," .
-	      $dbh->quote($sender_domain) . "," .
-	      $dbh->quote($host) . ",NOW())");
+	      $self->quote($sender_name) . "," .
+	      $self->quote($sender_domain) . "," .
+	      $self->quote($host) . ",NOW())");
 }
 
 sub put_in_domain_awl {
@@ -547,14 +575,14 @@ sub put_in_domain_awl {
 
     # delete old entries
     $self->do("DELETE FROM $domain_awl " .
-	      "WHERE sender_domain = " . $dbh->quote($sender_domain) .
-	      " AND host_ip = " . $dbh->quote($host));
+	      "WHERE sender_domain = " . $self->quote($sender_domain) .
+	      " AND host_ip = " . $self->quote($host));
 
     # create new entry
     $self->do("INSERT INTO $domain_awl (sender_domain, host_ip, " .
 	      "last_seen) VALUES(" .
-	      $dbh->quote($sender_domain) . "," .
-	      $dbh->quote($host) . ",NOW())");
+	      $self->quote($sender_domain) . "," .
+	      $self->quote($host) . ",NOW())");
 }
 
 ## Update AWL entries ##
@@ -564,9 +592,9 @@ sub update_from_awl {
     my $dbh = $self->{sqlgrey}{dbh};
 
     $self->do("UPDATE $from_awl SET last_seen = NOW() " .
-	      "WHERE sender_name = " . $dbh->quote($sender_name) .
-	      " AND sender_domain = " . $dbh->quote($sender_domain) .
-	      " AND host_ip = " . $dbh->quote($host));
+	      "WHERE sender_name = " . $self->quote($sender_name) .
+	      " AND sender_domain = " . $self->quote($sender_domain) .
+	      " AND host_ip = " . $self->quote($host));
 }
 
 sub update_domain_awl {
@@ -574,18 +602,17 @@ sub update_domain_awl {
     my $dbh = $self->{sqlgrey}{dbh};
 
     $self->do("UPDATE $domain_awl SET last_seen = NOW() " .
-	      "WHERE sender_domain = " . $dbh->quote($sender_domain) .
-	      " AND host_ip = " . $dbh->quote($host));
+	      "WHERE sender_domain = " . $self->quote($sender_domain) .
+	      " AND host_ip = " . $self->quote($host));
 }
 
 # check from_awl entries for a domain/IP
 sub count_from_awl {
     my ($self, $sender_domain, $host) = @_;
 
-    my $sth = $self->{sqlgrey}{dbh}->prepare(
-		     "SELECT COUNT(*) FROM $from_awl " .
-		     "WHERE sender_domain = ? AND host_ip = ?");
-    if (!$sth->execute($sender_domain, $host)) {
+    my $sth = $self->prepare_cached("SELECT COUNT(*) FROM $from_awl " .
+				    "WHERE sender_domain = ? AND host_ip = ?");
+    if (!defined $sth or !$sth->execute($sender_domain, $host)) {
 	$self->log(2, "Error: couldn't access $from_awl table: $DBI::errstr");
 	$self->connectdb();
         return 0; # do as if table is empty
@@ -624,8 +651,8 @@ sub delete_domain_from_mail_awl {
     my ($self, $domain, $host) = @_;
     my $dbh = $self->{sqlgrey}{dbh};
     $self->do("DELETE FROM $from_awl " .
-	      "WHERE sender_domain = " . $dbh->quote($domain) .
-	      " AND host_ip = " . $dbh->quote($host));
+	      "WHERE sender_domain = " . $self->quote($domain) .
+	      " AND host_ip = " . $self->quote($host));
 }
 
 # Active domain AWL for a domain/IP
@@ -652,7 +679,6 @@ sub is_in_whitelist {
 # check for a valid reconnection
 sub in_connect {
     my ($self, $sender_name, $sender_domain, $addr, $rcpt) = @_;
-    my $dbh = $self->{sqlgrey}{dbh};
 
     # last_seen less than $self->{sqlgrey}{max_connect_age} hours ago
     # but more than $self->{sqlgrey}{reconnect_delay} minutes ago
@@ -665,8 +691,8 @@ sub in_connect {
 		" AND now() - " .
 		$self->interval($self->{sqlgrey}{reconnect_delay},
 				"MINUTE");
-    my $sth = $dbh->prepare($query);
-    if (!$sth->execute($sender_name, $sender_domain, $addr, $rcpt)) {
+    my $sth = $self->prepare_cached($query);
+    if (!defined $sth or !$sth->execute($sender_name, $sender_domain, $addr, $rcpt)) {
         $self->log(2, "Error: couldn't access $connect table: $DBI::errstr");
 	$self->connectdb();
         return 1; # in doubt, accept
@@ -690,8 +716,8 @@ sub recently_in_connect {
 	        "AND first_seen >= now() - " .
 		$self->interval($self->{sqlgrey}{reconnect_delay},
 				"MINUTE");
-    my $sth = $self->{sqlgrey}{dbh}->prepare($query);
-    if (!$sth->execute($sender_name, $sender_domain, $addr, $rcpt)) {
+    my $sth = $self->prepare_cached($query);
+    if (!defined $sth or !$sth->execute($sender_name, $sender_domain, $addr, $rcpt)) {
         $self->log(2, "Error: Couldn't access $connect table: $DBI::errstr");
 	$self->connectdb();
         return 0; # in doubt, accept
@@ -711,19 +737,19 @@ sub put_in_connect {
 
     # delete old entries
     $self->do("DELETE FROM $connect " .
-	      "WHERE sender_name = " . $dbh->quote($sender_name) .
-	      " AND sender_domain = " . $dbh->quote($sender_domain) .
-	      " AND ip_addr = " . $dbh->quote($addr) .
-	      " AND rcpt = " . $dbh->quote($rcpt));
+	      "WHERE sender_name = " . $self->quote($sender_name) .
+	      " AND sender_domain = " . $self->quote($sender_domain) .
+	      " AND ip_addr = " . $self->quote($addr) .
+	      " AND rcpt = " . $self->quote($rcpt));
 
     # create new entry
     $self->do("INSERT INTO $connect (sender_name, sender_domain, " .
 	      "ip_addr, rcpt, first_seen) " .
 	      "VALUES(" .
-	      $dbh->quote($sender_name) . "," .
-	      $dbh->quote($sender_domain) . "," .
-	      $dbh->quote($addr) . "," .
-	      $dbh->quote($rcpt) . ", NOW())");
+	      $self->quote($sender_name) . "," .
+	      $self->quote($sender_domain) . "," .
+	      $self->quote($addr) . "," .
+	      $self->quote($rcpt) . ", NOW())");
 }
 
 # For logging purpose
@@ -740,8 +766,8 @@ sub get_reconnect_delay {
     } 
     $query .= "WHERE sender_name = ? AND sender_domain = ? " .
 	      "AND ip_addr = ? AND rcpt = ?";
-    my $sth = $self->{sqlgrey}{dbh}->prepare($query);
-    if (! $sth->execute($sender_name, $sender_domain, $addr, $rcpt)) {
+    my $sth = $self->prepare_cached($query);
+    if (!defined $sth or !$sth->execute($sender_name, $sender_domain, $addr, $rcpt)) {
         $self->log(2, "Error: couldn't get reconnect delay: $DBI::errstr");
         return "sql error";
     }
@@ -776,8 +802,8 @@ sub cleanup_connect {
 		"FROM $connect " .
 	        "WHERE first_seen < now() - " .
 		$self->interval($max_connect_age, "HOUR");
-    my $sth = $self->{sqlgrey}{dbh}->prepare($query);
-    if ($sth->execute()) {
+    my $sth = $self->prepare_cached($query);
+    if (defined $sth and $sth->execute()) {
 	my $result = $sth->fetchall_arrayref();
 	for my $spam (@{$result}) {
 	    $self->log(2, "Probable spam: $$spam[2]: " .

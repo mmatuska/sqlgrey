@@ -11,7 +11,7 @@ manpage:
 	perldoc -u sqlgrey | pod2man -n sqlgrey > sqlgrey.1
 
 clean:
-	rm -f sqlgrey.1.gz
+	rm -f sqlgrey.1
 	rm -f *~ init/*~ etc/*~
 
 install: all
