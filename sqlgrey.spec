@@ -38,3 +38,9 @@ make clean
 
 %files -f ../file.list.sqlgrey
 %doc sqlgrey_client_access
+
+%post
+if ! /usr/bin/id sqlgrey 2>/dev/null; then /usr/sbin/adduser -m -k /dev/null sqlgrey; fi
+
+%postun
+/usr/sbin/userdel sqlgrey

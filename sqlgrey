@@ -95,14 +95,21 @@ sub database_check {
 }
 
 sub cnctinfo {
+# Tested with PostgreSQL, MySQL and SQLite
     my $self = shift;
-    my $dsn = "DBI:" . $self->{sqlgrey}{db_type};
-    if ($self->{sqlgrey}{db_type} eq "mysql") {
+    my $db_type = $self->{sqlgrey}{db_type};
+    my $dsn = "DBI:" . $db_type;
+    # only MySQL uses database=
+    if ($db_type eq "mysql") {
         $dsn .= ":database=";
-    } elsif ($self->{sqlgrey}{db_type} eq "Pg") {
+    } else {
         $dsn .= ":dbname=";
     }
-    $dsn .= $self->{sqlgrey}{db_name} . ";host=" . $self->{sqlgrey}{db_host};
+    $dsn .= $self->{sqlgrey}{db_name};
+    # only SQLite doesn't require a hostname
+    if ($db_type ne "SQLite") {
+        $dsn .= ";host=" . $self->{sqlgrey}{db_host};
+    }
     return $dsn;
 }
 
@@ -119,15 +126,28 @@ sub initdb {
     if ($self->{sqlgrey}{db_type} eq "mysql") {
         $self->{sqlgrey}{dbh}->{mysql_auto_reconnect} = 1;
     }
+    if ($self->{sqlgrey}{db_type} eq "SQLite") {
+        $self->{sqlgrey}{dbh}->func( 'now', 0, sub { return time }, 'create_function' );
+    }
     $self->database_check();
 }
 
 # platform dependant INTERVAL syntax is here
 sub interval {
     my ($self, $nb, $unit) = @_;
-    if ($self->{sqlgrey}{db_type} eq "mysql") {
+    if ($self->{sqlgrey}{db_type} eq "mysql") { # MySQL doesn't want any ' char
         return "INTERVAL $nb $unit";
-    } elsif ($self->{sqlgrey}{db_type} eq "Pg") {
+    } elsif ($self->{sqlgrey}{db_type} eq "SQLite") { # SQLite doesn't recognise INTERVAL
+        if ($unit eq "DAY") {
+            return $nb * 24 * 60 * 60;
+        } elsif ($unit eq "HOUR") {
+            return $nb * 60 * 60;
+        } elsif ($unit eq "MINUTE") {
+            return $nb * 60;
+        } else {
+            die "interval(" . $nb . ", " . $unit . ") for SQLite, sqlgrey doesn't recognise $unit UNIT\n";
+        }
+    } else { # use PostgrSQL syntax (maybe the most SQL compliant)
         return "INTERVAL '" . "$nb $unit" . "'";
     }
 }
