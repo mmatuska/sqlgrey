@@ -73,14 +73,13 @@ sub do {
     my $self = shift;
     my $query = shift;
     my $dbh = $self->{sqlgrey}{dbh};
+
     if (! $dbh->do($query)) {
+	# failure
         $self->log(2, "Warning: couldn't do query:\n" .
 		   "$query:\n" .
-		   "$DBI::errstr, sleeping and reconnecting to DB");
-        sleep 10; # stall everybody, but if we can avoid exit...
-	$self->initdb();
-	$dbh->do($query)
-  	    or die "Error: db reconnection failed: $DBI::errstr";
+		   "$DBI::errstr, reconnecting to DB");
+	$self->connectdb();
     }
 }
 
@@ -88,11 +87,9 @@ sub do {
 sub table_exists {
     my $self = shift;
     my $tablename = shift;
-    # we don't use $self->do here as it could trigger an
-    # infinite recursive call in case of db connection problems
     # Seems the most portable way to do it
     # but needs SQL error reporting off at connect time :-<
-    $self->{sqlgrey}{dbh}->do("SELECT 1 from $tablename LIMIT 0")
+    $self->{sqlgrey}->{dbh}->do("SELECT 1 from $tablename LIMIT 0")
         or return 0;
     return 1;
 }
@@ -145,8 +142,11 @@ sub database_setup {
 	$self->upgradedb();
     }
 
+    # if upgradedb wasn't run ($wasempty eq 1)
+    # we must create the config table
     if (! $self->table_exists("$config")) {
 	$self->create_config_table();
+	$self->setconfig('version',$DB_VERSION);
     }
 }
 
@@ -332,6 +332,12 @@ sub cnctinfo {
 # Global DB Init code
 sub initdb {
     my $self = shift;
+    $self->connectdb();
+    $self->database_setup();
+}
+
+sub connectdb {
+    my $self = shift;
     my $db_type = $self->{sqlgrey}{db_type};
     $self->{sqlgrey}{dbh} = DBI->connect($self->cnctinfo(),
 					  $self->{sqlgrey}{db_user},
@@ -339,46 +345,42 @@ sub initdb {
                                         { PrintError => 0,
 					  AutoCommit => 1 }
                                         )
-	or die "Can't connect to DB: $DBI::errstr";
+	or $self->log(2, "Can't connect to DB: $DBI::errstr");
     # mysql drops the connection, we have some glue code
     # to reinit the connection, but better use mysql DBD code
     if ($db_type eq "mysql") {
         $self->{sqlgrey}{dbh}->{mysql_auto_reconnect} = 1;
     }
-    # Create now function for SQLite
+    # Create "now()" function for SQLite
     if ($db_type eq "SQLite") {
         $self->{sqlgrey}{dbh}->func( 'now', 0, sub { return time },
 				     'create_function' );
     }
-    $self->database_setup();
 }
 
 #####################
 ## Table creations ##
 #####################
 
-# we don't use $self->do here as it would trigger an
-# infinite loop in case of db connection problems
-
 sub create_from_awl_table {
     my $self = shift;
-    $self->{sqlgrey}{dbh}->do("CREATE TABLE $from_awl " .
-			      "(sender_name varchar(64) NOT NULL, " .
-			      "sender_domain varchar(255) NOT NULL, " .
-			      "host_ip varchar(15) NOT NULL, " .
-			      "last_seen timestamp NOT NULL, " .
-			      "PRIMARY KEY " .
-			      "(sender_name, sender_domain, host_ip));")
+    $self->{sqlgrey}->{dbh}->do("CREATE TABLE $from_awl " .
+				"(sender_name varchar(64) NOT NULL, " .
+				"sender_domain varchar(255) NOT NULL, " .
+				"host_ip varchar(15) NOT NULL, " .
+				"last_seen timestamp NOT NULL, " .
+				"PRIMARY KEY " .
+				"(sender_name, sender_domain, host_ip));")
 	or die "Couldn't create table $from_awl: $DBI::errstr\n";
 }
 
 sub create_domain_awl_table {
     my $self = shift;
-    $self->{sqlgrey}{dbh}->do("CREATE TABLE $domain_awl " .
-			      "(sender_domain varchar(255) NOT NULL, " .
-			      "host_ip varchar(15) NOT NULL, " .
-			      "last_seen timestamp NOT NULL, " .
-			      "PRIMARY KEY (sender_domain, host_ip));")
+    $self->{sqlgrey}->{dbh}->do("CREATE TABLE $domain_awl " .
+				"(sender_domain varchar(255) NOT NULL, " .
+				"host_ip varchar(15) NOT NULL, " .
+				"last_seen timestamp NOT NULL, " .
+				"PRIMARY KEY (sender_domain, host_ip));")
 	or die "Couldn't create table $from_awl: $DBI::errstr\n";
 }
 
@@ -386,23 +388,22 @@ sub create_connect_table {
     my $self = shift;
     # Note: no primary key, Mysql can't handle 500+ byte primary keys
     # connect should not become big enough to make it a problem
-    $self->{sqlgrey}{dbh}->do("CREATE TABLE $connect " .
-			      "(sender_name varchar(64) NOT NULL, " .
-			      "sender_domain varchar(255) NOT NULL, " .
-			      "ip_addr varchar(15) NOT NULL, " .
-			      "rcpt varchar(255) NOT NULL, " .
-			      "first_seen timestamp NOT NULL);")
+    $self->{sqlgrey}->{dbh}->do("CREATE TABLE $connect " .
+				"(sender_name varchar(64) NOT NULL, " .
+				"sender_domain varchar(255) NOT NULL, " .
+				"ip_addr varchar(15) NOT NULL, " .
+				"rcpt varchar(255) NOT NULL, " .
+				"first_seen timestamp NOT NULL);")
 	or die "Couldn't create table $connect: $DBI::errstr\n";
 }
 
 sub create_config_table {
     my $self = shift;
-    $self->{sqlgrey}{dbh}->do("CREATE TABLE $config " .
-			      "(parameter varchar(255) NOT NULL, " .
-			      "value varchar(255), " .
-			      "PRIMARY KEY (parameter));")
+    $self->{sqlgrey}->{dbh}->do("CREATE TABLE $config " .
+				"(parameter varchar(255) NOT NULL, " .
+				"value varchar(255), " .
+				"PRIMARY KEY (parameter));")
         or die "Couldn't create table $config: $DBI::errstr\n";
-    $self->{sqlgrey}{dbh}->do("INSERT INTO ");
 }
 
 #################
@@ -440,6 +441,7 @@ sub normalize_sender {
     # will match VERP mailing-list message retransmissions
     $user =~ s/\b\d+\b/#/g;
     # per RFC, user should be < 64, domain < 255
+    # our database schema doesn't support more
     return (substr($user, 0, 64),substr($domain, 0, 255));
 }
 
@@ -454,7 +456,8 @@ sub normalize_rcpt {
     $user =~ s/\b\d+\b/#/g;
     # trim to 255 chars ( although "$user" . "@" . "$domain"
     # can be 64 + 1 + 255, VARCHAR is 255 max)
-    # Note: SQLgrey won't greylist some rare rcpt addresses
+    # Note: SQLgrey won't greylist as well some rare rcpt addresses
+    # these adresses can be whitelisted implicitely
     return substr("$user\@$domain", 0, 255);
 }
 
@@ -482,8 +485,8 @@ sub is_in_from_awl {
 			   );
     if (! $sth->execute($sender_name, $sender_domain, $host)) {
 	$self->log(1, "Error: couldn't access $from_awl table: $DBI::errstr");
-	$self->initdb();
-        return 0; # avoid accept
+	$self->connectdb();
+        return 1; # in doubt, accept
     }
     my $result = $sth->fetchall_arrayref();
     if ($#$result != 0) {
@@ -507,8 +510,8 @@ sub is_in_domain_awl {
 			   );
     if (!$sth->execute($sender_domain, $host)) {
 	$self->log(1, "Error: couldn't access $domain_awl table: $DBI::errstr");
-	$self->initdb();
-        return 0; # avoid accept
+	$self->connectdb();
+        return 1; # in doubt, accept
     }
     my $result = $sth->fetchall_arrayref();
     if ($#$result != 0) {
@@ -584,7 +587,7 @@ sub count_from_awl {
 		     "WHERE sender_domain = ? AND host_ip = ?");
     if (!$sth->execute($sender_domain, $host)) {
 	$self->log(2, "Error: couldn't access $from_awl table: $DBI::errstr");
-	$self->initdb();
+	$self->connectdb();
         return 0; # do as if table is empty
     }
 
@@ -665,8 +668,8 @@ sub in_connect {
     my $sth = $dbh->prepare($query);
     if (!$sth->execute($sender_name, $sender_domain, $addr, $rcpt)) {
         $self->log(2, "Error: couldn't access $connect table: $DBI::errstr");
-		$self->initdb();
-        return 0; # force defer
+	$self->connectdb();
+        return 1; # in doubt, accept
     }
     my $result = $sth->fetchall_arrayref();
     if ($#$result != 0) {
@@ -689,9 +692,9 @@ sub recently_in_connect {
 				"MINUTE");
     my $sth = $self->{sqlgrey}{dbh}->prepare($query);
     if (!$sth->execute($sender_name, $sender_domain, $addr, $rcpt)) {
-        $self->log("Couldn't access $connect table: $DBI::errstr");
-	$self->initdb();
-        return 1; # force defer
+        $self->log(2, "Error: Couldn't access $connect table: $DBI::errstr");
+	$self->connectdb();
+        return 0; # in doubt, accept
     }
     my $result = $sth->fetchall_arrayref();
     if ($#$result != 0) {
@@ -783,7 +786,7 @@ sub cleanup_connect {
 	}
     } else {
 	$self->log(2, "Error: couldn't list detected spam attempts");
-	$self->initdb();
+	$self->connectdb();
     }
     $self->do("DELETE FROM $connect " .
 	      "WHERE first_seen < now() - " .

@@ -1,5 +1,5 @@
 %define name sqlgrey
-%define ver  1.3.1
+%define ver  1.3.2
 %define rel  1
 
 Summary:   SQLgrey is a postfix grey-listing policy service.
@@ -30,14 +30,16 @@ make
 %install
 make rh-install ROOTDIR=$RPM_BUILD_ROOT
 
-cd $RPM_BUILD_ROOT
-find . -type f | sed 's,^\.,\%attr(-\,root\,root) ,' > $RPM_BUILD_DIR/file.list.sqlgrey
-
 %clean
 make clean
 
-%files -f ../file.list.sqlgrey
-%doc sqlgrey_client_access README HOWTO
+%files
+%defattr(-,root,root)
+/etc/init.d/sqlgrey
+/usr/bin/sqlgrey
+/usr/share/man/man1/sqlgrey.1.gz
+%config(noreplace) /etc/sqlgrey/sqlgrey.conf
+%doc sqlgrey_client_access README HOWTO Changelog FAQ TODO
 
 %pre
 if [ `getent passwd sqlgrey | wc -l` = 0 ]; then
@@ -55,6 +57,10 @@ if [ $1 = 0 ]; then
 fi
 
 %changelog
+* Wed Nov 17 2004 Lionel Bouton <lionel-dev@bouton.name>
+- RPM packaging fixed
+- DB connection pbs don't crash SQLgrey anymore
+
 * Thu Nov 11 2004 Lionel Bouton <lionel-dev@bouton.name>
 - Database schema slightly changed,
 - Automatic database schema upgrade framework
