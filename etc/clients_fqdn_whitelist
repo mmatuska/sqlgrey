@@ -3,7 +3,7 @@
 #
 # hostname.domain.com # whole system name
 # *.domain.com        # whitelist any fqdn in the domain 'domain.com'
-# /regexp/            # whitelist any fqdn matching the regexp
+# /regexp/            # whitelist any fqdn matching the regexp (by far most CPU intensive)
 
 # Note you need the following two lines to allow both
 # <lots of mtas>.example.com and example.com
@@ -70,3 +70,4 @@ lockergnome.wc09.net
 # No retry
 unitymail.alapage.com # Alapage newsletter
 smtp.mandrake.org # mandrake newsletter
+*.emailebay.com # eBay mailservers
