@@ -33,7 +33,7 @@ use DBI;
 use vars qw(@ISA);
 @ISA = qw(Net::Server::Multiplex);
 
-my $VERSION='1.3.3';
+my $VERSION = 1.3.4;
 
 my $DB_VERSION = 1;
 
@@ -41,7 +41,6 @@ my $DB_VERSION = 1;
 my $connect       = 'connect';
 my $from_awl      = 'from_awl';
 my $domain_awl    = 'domain_awl';
-my $net_whitelist = 'net_whitelist';
 my $config        = 'config';
 
 # defaults
@@ -62,6 +61,9 @@ $dflt{db_pass}            = '';
 
 # Default configuration file
 my $config_file           = '/etc/sqlgrey/sqlgrey.conf';
+# whitelist files
+my $stat_ip_whitelist_file = '/etc/sqlgrey/clients_ip_whitelist';
+my $dyn_ip_whitelist_file = '/etc/sqlgrey/clients_ip_whitelist.local';
 
 ##########################
 ## Database helper subs ##
@@ -666,10 +668,94 @@ sub move_domain_from_mail_to_domain_awl {
 ##############
 ## Whitelist
 
-sub is_in_whitelist {
-    ## waits all parameters
+sub init_whitelists {
+    my $self = shift;
+    $self->read_ip_whitelists();
+    $self->read_fqdn_whitelists();
+}
+
+sub read_ip_whitelists {
+    my $self = shift;
+    $self->read_static_ip_whitelist();
+    $self->read_dyn_ip_whitelist();
+}
+
+sub read_fqdn_whitelists {
+    my $self = shift;
+    $self->read_static_fqdn_whitelist();
+    $self->read_dyn_fqdn_whitelist();
+}
+
+sub read_static_ip_whitelist {
+    my $self = shift;
+    # Prepare empty whitelist
+    my $whitelist;
+    $whitelist->{IP} = {};
+    $whitelist->{C} = {};
+    if (! open (FILE, '<' . $stat_ip_whitelist_file)) {
+	$self->log(2, "Warning: no $stat_ip_whitelist_file");
+	$self->{sqlgrey}{stat_ip_whitelist} = $whitelist;
+	return;
+    }
+    while (<FILE>) {
+	chomp;
+	# strip comments
+	s/#.*//;
+	# strip spaces
+	s/\s+//;
+	# Anything left ?
+	next unless length;
+	if (/^\d+\.\d+\.\d+\.\d+$/) {
+	    $whitelist->{IP}{$_} = '';
+	    next;
+	} elsif (/^\d+\.\d+\.\d+$/) {
+	    $whitelist->{C}{$_} = '';
+	    next;
+	} else {
+	    $self->log(2,"Unrecognised line in $stat_ip_whitelist_file: $_");
+	}
+    }
+    $self->{sqlgrey}{stat_ip_whitelist} = $whitelist;
+}
+
+sub read_dyn_ip_whitelist {
+}
+
+sub read_static_fqdn_whitelist {
+}
+
+sub read_dyn_fqdn_whitelist {
+}
+
+sub is_in_whitelists {
+    ## expects all parameters
     ## for rcpt_whitelists for example
-    my ($self, $sender_name, $sender_domain, $addr, $rcpt) = @_;
+    my ($self, $sender_name, $sender_domain, $ip, $fqdn, $rcpt) = @_;
+    return ($self->is_in_ip_whitelists($ip) or
+	$self->is_in_fqdn_whitelists($fqdn));
+}
+
+sub is_in_ip_whitelists {
+    my ($self, $ip) = @_;
+    return ($self->is_in_static_ip_whitelist($ip)
+	or $self->is_in_dyn_ip_whitelist($ip));
+}
+
+sub is_in_fqdn_whitelists {
+    # placeholder
+    return 0;
+}
+
+sub is_in_static_ip_whitelist {
+    my ($self, $ip) = @_;
+    my $c_net = join('.', (split(/\./, $ip))[0..2]);
+
+    return (defined $self->{sqlgrey}{stat_ip_whitelist}->{IP}{$ip}
+	or defined $self->{sqlgrey}{stat_ip_whitelist}->{C}{$c_net});
+}
+
+sub is_in_dyn_ip_whitelist {
+    # placeholder
     return 0;
 }
 
@@ -839,9 +925,9 @@ sub smtpd_access_policy($$)
 	$self->normalize_sender($attr->{sender});
     my $recipient = $self->normalize_rcpt($attr->{recipient});
     my $addr = $attr->{client_address};
+    my $fqdn = $attr->{client_name};
+
     # Is it time for cleanups ?
-    # Note: cleanup only calls $self->do which reconnects
-    # to database in case of disconnection
     if (time() > ($self->{sqlgrey}{last_maint} +
 		  $self->{sqlgrey}{maint_delay})
        ) {
@@ -851,8 +937,9 @@ sub smtpd_access_policy($$)
     }
 
     # whitelist check
-    if ($self->is_in_whitelist($sender_name, $sender_domain,
-			       $addr, $recipient)) {
+    if ($self->is_in_whitelists($sender_name, $sender_domain,
+			       $addr, $fqdn, $recipient)) {
+	$self->log(3, "whitelist: $sender_name\@$sender_domain, $addr($fqdn) $recipient");
         return 'dunno';
     }
     # domain scale awl check
@@ -1049,8 +1136,9 @@ sub pre_loop_hook() {
 			      die @_;};
     }
     $self->initdb();
-    $self->log(2, "Initial cleanup");
+    $self->log(4, "Initial cleanup");
     $self->cleanup();
+    $self->init_whitelists();
 
     if (defined $self->{server}{setsid}) {
         # Detach from terminal

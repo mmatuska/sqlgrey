@@ -5,7 +5,41 @@
 * After some time I've noticed entries like this one in my from_awl;
 -undef- | -undef- | aaa.bbb.ccc.ddd | xxxx-xx-xx xx:xx:xx.xxxxxx
 
-This is expected. Mail servers send you e-mail notices when they can't deliver
-your messages. When doing so, the Return-Path is empty.
-As at least MySQL doesn't support NULL in PRIMARY KEYs, SQLgrey creates these
-'-undef- | -undef-' entries to recognise these cases.
+This is expected. Mail servers send you e-mail notices when they can't
+deliver your messages. When doing so, the Return-Path is empty.
+As at least MySQL doesn't support NULL in PRIMARY KEYs, SQLgrey creates
+these '-undef- | -undef-' entries to recognise these cases.
+
+* Why isn't there any PRIMARY KEY or INDEX on the connect table ?
+
+I usually add a PRIMARY KEY to each table where there's a (KEY, VALUE)
+structure. It's rarely bad for performance and help detect bugs in
+the way the application layer handles the data.
+Unfortunately MySQL doesn't support PRIMARY KEYs on columns
+whose aggregate size is more than 500 bytes :
+ERROR 1071: Specified key was too long. Max key length is 500
+
+When adding support to PostgreSQL I could have added a PostgreSQL
+specific PRIMARY KEY. I chose not to because I was not convinced it
+was a good idea to introduce different database schema depending on
+the actual database system.
+
+More importantly, it may very well be that simple indexes on some columns
+might be sufficient and will be supported by every database.
+
+If you want to help on this and have at least a moderate-trafic MTA
+(more than 5000 messages/day), please send me (lionel-dev@bouton.name) :
+
+- the result of "SELECT count(*) FROM connect",
+- the mean execution time of 
+	SELECT count(*) FROM connect
+	WHERE  first_seen < NOW() - INTERVAL '24 HOUR'
+ (for MySQL remove the single-quotes from '24 HOUR')
+  with and without indexes (please give the INDEX creation syntax)
+- the mean execution time of
+	SELECT 1 FROM connect
+	WHERE sender_name = <val> AND sender_domain = <val>
+	AND ip_addr = <val> AND rcpt = <val> AND
+	first_seen BETWEEN now() - INTERVAL '24  HOUR' AND
+	now() - INTERVAL '6 MINUTE'
+  with and without indexes (please give the INDEX creation syntax)

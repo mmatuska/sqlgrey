@@ -1,3 +1,2 @@
-- whitelisting with /etc/sqlgrey/whitelist /etc/sqlgrey/whitelist.local
+- whitelisting with /etc/sqlgrey/*whitelist and /etc/sqlgrey/*whitelist.local
 - indexes on timestamps in from_awl and domain_awl
-- automatic version update of specfile and perl script

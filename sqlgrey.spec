@@ -1,5 +1,5 @@
 %define name sqlgrey
-%define ver  1.3.3
+%define ver  1.3.4
 %define rel  1
 
 Summary:   SQLgrey is a postfix grey-listing policy service.
@@ -39,7 +39,8 @@ make clean
 /usr/bin/sqlgrey
 /usr/share/man/man1/sqlgrey.1.gz
 %config(noreplace) /etc/sqlgrey/sqlgrey.conf
-%doc sqlgrey_client_access README HOWTO Changelog FAQ TODO
+%config(noreplace) /etc/sqlgrey/clients_ip_whitelist
+%doc README HOWTO Changelog FAQ TODO
 
 %pre
 if [ `getent passwd sqlgrey | wc -l` = 0 ]; then
@@ -57,6 +58,9 @@ if [ $1 = 0 ]; then
 fi
 
 %changelog
+* Mon Nov 22 2004 Lionel Bouton <lionel-dev@bouton.name>
+- 1.3.4 : ip whitelisting
+
 * Wed Nov 17 2004 Lionel Bouton <lionel-dev@bouton.name>
 - RPM packaging fixed
 - DB connection pbs don't crash SQLgrey anymore

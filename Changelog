@@ -1,3 +1,5 @@
+ 2004-11-22 lionel: v1.3.3
+	- preliminary whitelist support
  2004-11-07 lionel: v1.2.0
 	- Hardened against SQL code injection
 	- Better SQL error reporting
