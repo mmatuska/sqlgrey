@@ -1,3 +1,7 @@
+* Tue Mar 15 2005 Lionel Bouton <lionel-dev@bouton.name>
+ - 1.5.4 release
+ - fix for regexp compilation (regexp in fqdn_whitelists didn't work)
+
 * Sat Mar 05 2005 Lionel Bouton <lionel-dev@bouton.name>
  - 1.5.3 release
  - the cleanup is now done in a separate process to avoid stalling the service
