@@ -7,7 +7,7 @@
 # pidfile: /var/run/sqlgrey.pid
 
 # Source function library.
-. /etc/rc.d/init.d/functions
+. /etc/init.d/functions
 
 # See how we were called.
 case "$1" in

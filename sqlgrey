@@ -33,7 +33,7 @@ use DBI;
 use vars qw(@ISA);
 @ISA = qw(Net::Server::Multiplex);
 
-my $VERSION = "1.3.5";
+my $VERSION = "1.3.6";
 my $software = 'SQLgrey-' . "$VERSION";
 
 my $DB_VERSION = 1;
@@ -1128,7 +1128,7 @@ sub smtpd_access_policy($$)
 	    : 'dunno';
     }
 
-    my $cltid = client_identifier($addr, $fqdn);
+    my $cltid = $self->client_identifier($addr, $fqdn);
     # domain scale awl check
     if ($self->is_in_domain_awl($sender_domain, $cltid)) {
 	$self->log(3, "domain_awl-match: updating $sender_domain, $cltid");
@@ -1217,6 +1217,9 @@ sub read_conffile
         next unless length;     # anything left ?
         my ($var, $value) = split(/\s*=\s*/, $_, 2);
         $dflt{$var} = $value;
+	if (! defined $value) {
+	    $dflt{$var} = 1;
+	}
     }
     close CONF
 	or die "Couldn't close config file $config_file\n";

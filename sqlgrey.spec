@@ -1,5 +1,5 @@
 %define name sqlgrey
-%define ver  1.3.5
+%define ver  1.3.6
 %define rel  1
 
 Summary:   SQLgrey is a postfix grey-listing policy service.
@@ -44,21 +44,32 @@ make clean
 %doc README HOWTO Changelog FAQ TODO
 
 %pre
-if [ `getent passwd sqlgrey | wc -l` = 0 ]; then
-        /usr/sbin/useradd -d /var/sqlgrey sqlgrey
+if [ `getent group sqlgrey | wc -l` = 0 ]; then
+        /usr/sbin/groupadd sqlgrey
 fi
-
-%post
-if ! /usr/bin/id sqlgrey >/dev/null 2>/dev/null; then /usr/sbin/adduser -m -k /dev/null sqlgrey; fi
+if [ `getent passwd sqlgrey | wc -l` = 0 ]; then
+        /usr/sbin/useradd -g sqlgrey -d /var/sqlgrey sqlgrey
+fi
 
 %postun
 if [ $1 = 0 ]; then
    if [ `getent passwd sqlgrey | wc -l` = 1 ]; then
       /usr/sbin/userdel sqlgrey
    fi
+   if [ `getent group sqlgrey | wc -l` = 1 ]; then
+      /usr/sbin/groupdel sqlgrey
+   fi
 fi
 
 %changelog
+* Wed Dec 01 2004 Lionel Bouton <lionel-dev@bouton.name>
+- spec file tuning inspired by Derek Battams
+
+* Tue Nov 30 2004 Lionel Bouton <lionel-dev@bouton.name>
+- 1.3.6 : domainname whitelisting
+          2 additional greylisting methods
+          more log verbosity control
+
 * Mon Nov 22 2004 Lionel Bouton <lionel-dev@bouton.name>
 - 1.3.4 : ip whitelisting
 
