@@ -1,19 +1,14 @@
-1.4.5
+1.5.x
 - uniform ip_addr column name,
   add index on ip_addr in connect table
   add first_seen in from_awl and domain_awl
   reorder PRIMARY KEY of TABLE from_awl to ip_addr, sender_domain, sender_name
   for performance (query not involving left column can't use the index)
   (up the database version to 2)
-- Don't use "#" syntax for connect entries
-
-1.4.x
 - bug with multiple connect entries matching a reconnection (only in multiple
   SQLgrey instances configs) to fix
 - create a stress-testing suite (for performance/reliability tests)
 - make SQLgrey return value configurable
-  
-1.5.x
 - use time units everywhere to make configuration easier
 - experiment with SPF support
 - switch from log level to log categories

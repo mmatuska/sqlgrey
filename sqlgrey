@@ -33,10 +33,10 @@ use DBI;
 use vars qw(@ISA);
 @ISA = qw(Net::Server::Multiplex);
 
-my $VERSION = "1.4.8";
+my $VERSION = "1.5.0";
 my $software = 'SQLgrey-' . "$VERSION";
 
-my $DB_VERSION = 1;
+my $DB_VERSION = 2;
 
 # Table names
 my $connect       = 'connect';
@@ -259,12 +259,15 @@ sub database_setup {
     my $wasfull = 1;
     if (! $self->table_exists("$from_awl")) {
 	$self->create_from_awl_table();
+	$self->create_from_awl_indexes();
 	$wasfull = 0; } else { $wasempty = 0; }
     if (! $self->table_exists("$domain_awl")) {
 	$self->create_domain_awl_table();
+	$self->create_domain_awl_indexes();
 	$wasfull = 0; } else { $wasempty = 0; }
     if (! $self->table_exists("$connect")) {
 	$self->create_connect_table();
+	$self->create_connect_indexes();
 	$wasfull = 0; } else { $wasempty = 0, }
 
     if ($self->currentdbversion($wasempty) < $DB_VERSION) {
@@ -284,6 +287,9 @@ sub database_setup {
     $self->{sqlgrey}{warn_db} = 1;
 }
 
+# Database configuration related, only used for checking
+# schema version now, might be used to check compatibility
+# between database schema and SQLgrey startup switches in the future
 sub getconfig {
     my $self = shift;
     my $param = shift;
@@ -305,9 +311,6 @@ sub getconfig {
     }
 }
 
-# Database configuration related, only used for checking
-# schema version now, might be used to check compatibility
-# between database schema and SQLgrey startup switches in the future
 sub setconfig {
     my $self = shift;
     my $param = shift;
@@ -383,71 +386,68 @@ sub upgrade() {
     my $self = shift;
     my $ver = shift;
     if ($ver eq 0) {
-	$self->upgrade0();
+	$self->mydie('Too old SQLgrey database',
+		    'The current layout of the SQLgrey database is too old,' .
+		    'please launch SQLgrey 1.4 to convert it to a layout I can understand');
+    } elsif($ver eq 1) {
+	$self->upgrade1();
     }
 }
 
-sub upgrade0() {
+sub upgrade1() {
     my $self = shift;
     my $db_type = $self->{sqlgrey}{db_type};
-    $self->log(1, "Upgrading database schema from version 0 to version 1");
-    if ($db_type ne "SQLite") {
-	# 0 -> 1 : char to varchar
-	# rename current table and dump content into new ones
+    $self->log(1, "Upgrading database schema from version 1 to version 2");
 
-	# connect
-	$self->log(1, "CHAR -> VARCHAR in $connect table");
-	$self->do("ALTER TABLE $connect RENAME TO $connect" . "old");
-	$self->create_connect_table();
-	$self->do("INSERT INTO $connect (sender_name, sender_domain, " .
-		  "ip_addr, rcpt, first_seen) " .
+    # connect
+    $self->log(1, "$connect table: renaming ip_addr to src");
+    $self->do("ALTER TABLE $connect RENAME TO $connect" . "old");
+    $self->create_connect_table();
+    $self->do("INSERT INTO $connect (sender_name, sender_domain, " .
+		  "src, rcpt, first_seen) " .
 		  "SELECT sender_name, sender_domain, ip_addr, " .
 		  "rcpt, first_seen " .
 		  "FROM $connect" . "old");
-	$self->do("DROP TABLE $connect" . "old");
+    $self->do("DROP TABLE $connect" . "old");
+    $self->log(1, "$connect table: adding indexes");
+    $self->create_connect_indexes();
 
-	# from_awl
-	$self->log(1, "CHAR -> VARCHAR in $from_awl table");
-	$self->do("ALTER TABLE $from_awl RENAME TO $from_awl" . "old");
-	if ($db_type eq 'Pg') {
-	    # we need to remove the pkey constraint
-	    $self->do("ALTER TABLE $from_awl" . "old DROP CONSTRAINT " .
-		      "from_awl_pkey");
-	}
-	$self->create_from_awl_table();
-	$self->do("INSERT INTO $from_awl (sender_name, sender_domain, " .
-		  "host_ip, last_seen) " .
-		  "SELECT sender_name, sender_domain, host_ip, last_seen " .
-		  "FROM $from_awl" . "old");
-	$self->do("DROP TABLE $from_awl" . "old");
-
-	# domain_awl
-	$self->log(1, "CHAR -> VARCHAR in $domain_awl table");
-	$self->do("ALTER TABLE $domain_awl RENAME TO $domain_awl" . "old");
-	if ($db_type eq 'Pg') {
-	    # we need to remove the pkey constraint
-	    $self->do("ALTER TABLE $domain_awl" . "old DROP CONSTRAINT " .
-		      "domain_awl_pkey");
-	}
-	$self->create_domain_awl_table();
-	$self->do("INSERT INTO $domain_awl (sender_domain, host_ip, " .
-		  "last_seen) " .
-		  "SELECT sender_domain, host_ip, last_seen " .
-		  "FROM $domain_awl" . "old");
-	$self->do("DROP TABLE $domain_awl" . "old");
-
-	# net_whitelist not needed anymore
-	if ($self->table_exists("net_whitelist")) {
-	    $self->log(1, "net_whitelist not supported anymore, " .
-		       "see /etc/sqlgrey/clients_*_whitelist");
-	    $self->do("DROP TABLE net_whitelist");
-	}
-    } else {
-	$self->log(1, "SQLite treats VARCHAR and CHAR the same, " .
-		   "no upgrade needed");
+    # from_awl
+    $self->log(1, "$from_awl: renaming host_ip to src");
+    $self->do("ALTER TABLE $from_awl RENAME TO $from_awl" . "old");
+    if ($db_type eq 'Pg') {
+	# we need to remove the pkey constraint
+	$self->do("ALTER TABLE $from_awl" . "old DROP CONSTRAINT " .
+		  "from_awl_pkey");
     }
-    $self->create_config_table();
-    $self->setconfig('version','1');
+    $self->create_from_awl_table();
+    $self->do("INSERT INTO $from_awl (sender_name, sender_domain, " .
+	      "src, last_seen, first_seen) " .
+	      "SELECT sender_name, sender_domain, host_ip, last_seen, last_seen " .
+	      "FROM $from_awl" . "old");
+    $self->do("DROP TABLE $from_awl" . "old");
+    $self->log(1, "$from_awl: adding indexes");
+    $self->create_from_awl_indexes();
+
+    # domain_awl
+    $self->log(1, "$domain_awl: renaming host_ip to src");
+    $self->do("ALTER TABLE $domain_awl RENAME TO $domain_awl" . "old");
+    if ($db_type eq 'Pg') {
+	# we need to remove the pkey constraint
+	$self->do("ALTER TABLE $domain_awl" . "old DROP CONSTRAINT " .
+		  "domain_awl_pkey");
+    }
+    $self->create_domain_awl_table();
+    $self->do("INSERT INTO $domain_awl (sender_domain, src, " .
+	      "last_seen, first_seen) " .
+	      "SELECT sender_domain, host_ip, last_seen, last_seen " .
+	      "FROM $domain_awl" . "old");
+    $self->do("DROP TABLE $domain_awl" . "old");
+    $self->log(1, "$domain_awl: adding indexes");
+    $self->create_domain_awl_indexes();
+
+    # Update our schema
+    $self->setconfig('version','2');
 }
 
 # Build a connect string for DBI
@@ -507,25 +507,41 @@ sub connectdb {
 sub create_from_awl_table {
     my $self = shift;
     $self->do("CREATE TABLE $from_awl " .
-	      "(sender_name varchar(64) NOT NULL, " .
-	      "sender_domain varchar(255) NOT NULL, " .
-	      "host_ip varchar(15) NOT NULL, " .
-	      "last_seen timestamp NOT NULL, " .
-	      "PRIMARY KEY " .
-	      "(sender_name, sender_domain, host_ip));")
+	      '(sender_name varchar(64) NOT NULL, ' .
+	      'sender_domain varchar(255) NOT NULL, ' .
+	      'src varchar(15) NOT NULL, ' .
+	      'first_seen timestamp NOT NULL, ' .
+	      'last_seen timestamp NOT NULL, ' .
+	      'PRIMARY KEY ' .
+	      '(src, sender_domain, sender_name))')
 	or $self->mydie('create_from_awl_table error',
 			'Couldn\'t create table $from_awl: $DBI::errstr');
+}
+sub create_from_awl_indexes {
+    my $self = shift;
+    $self->do("CREATE INDEX $from_awl" . '_lseen ' .
+	     "ON $from_awl (last_seen)")
+	or $self->mydie('create_from_awl_table error',
+			"couldn't create index on $from_awl (last_seen)");
 }
 
 sub create_domain_awl_table {
     my $self = shift;
     $self->do("CREATE TABLE $domain_awl " .
-	      "(sender_domain varchar(255) NOT NULL, " .
-	      "host_ip varchar(15) NOT NULL, " .
-	      "last_seen timestamp NOT NULL, " .
-	      "PRIMARY KEY (sender_domain, host_ip));")
+	      '(sender_domain varchar(255) NOT NULL, ' .
+	      'src varchar(15) NOT NULL, ' .
+	      'first_seen timestamp NOT NULL, ' .
+	      'last_seen timestamp NOT NULL, ' .
+	      'PRIMARY KEY (src, sender_domain))')
 	or $self->mydie('create_domain_awl_table error',
 			"Couldn't create table $domain_awl: $DBI::errstr");
+}
+sub create_domain_awl_indexes {
+    my $self = shift;
+    $self->do("CREATE INDEX $domain_awl" . '_lseen ' .
+	     "ON $domain_awl (last_seen)")
+	or $self->mydie('create_domain_awl_table error',
+			"couldn't create index on $domain_awl (last_seen)");
 }
 
 sub create_connect_table {
@@ -533,13 +549,24 @@ sub create_connect_table {
     # Note: no primary key, Mysql can't handle 500+ byte primary keys
     # connect should not become big enough to make it a problem
     $self->do("CREATE TABLE $connect " .
-	      "(sender_name varchar(64) NOT NULL, " .
-	      "sender_domain varchar(255) NOT NULL, " .
-	      "ip_addr varchar(15) NOT NULL, " .
-	      "rcpt varchar(255) NOT NULL, " .
-	      "first_seen timestamp NOT NULL);")
+	      '(sender_name varchar(64) NOT NULL, ' .
+	      'sender_domain varchar(255) NOT NULL, ' .
+	      'src varchar(15) NOT NULL, ' .
+	      'rcpt varchar(255) NOT NULL, ' .
+	      'first_seen timestamp NOT NULL)')
 	or $self->mydie('create_connect_table',
 			"Couldn't create table $connect: $DBI::errstr");
+}
+sub create_connect_indexes {
+    my $self = shift;
+    $self->do("CREATE INDEX $connect" . '_idx ' .
+	     "ON $connect (src, sender_domain, sender_name)")
+	or $self->mydie('create_connect_table error',
+			"couldn't create index on $connect (src, sender_domain, sender_name)");
+    $self->do("CREATE INDEX $connect" . '_fseen ' .
+	     "ON $connect (first_seen)")
+	or $self->mydie('create_connect_table error',
+			"couldn't create index on $connect (first_seen)");
 }
 
 sub create_config_table {
@@ -642,7 +669,7 @@ sub is_in_from_awl {
     my $sth = $self->prepare_cached("SELECT 1 FROM $from_awl " .
 				    "WHERE sender_name = ? " .
 				    "AND sender_domain = ? " .
-				    "AND host_ip = ? " .
+				    "AND src = ? " .
 				    "AND last_seen > now() - " .
 				    $self->interval($self->{sqlgrey}{awl_age},
 						    "DAY")
@@ -668,7 +695,7 @@ sub is_in_domain_awl {
     # last_seen less than $self->{sqlgrey}{awl_age} days ago
     my $sth = $self->prepare_cached("SELECT 1 FROM $domain_awl " .
 				    "WHERE sender_domain = ? " .
-				    "AND host_ip = ? " .
+				    "AND src = ? " .
 				    "AND last_seen > now() - " .
 				    $self->interval($self->{sqlgrey}{awl_age},
 						    "DAY")
@@ -691,35 +718,37 @@ sub is_in_domain_awl {
 ## Put entries in AWLs ##
 
 sub put_in_from_awl {
-    my ($self, $sender_name, $sender_domain, $host) = @_;
+    my ($self, $sender_name, $sender_domain, $host, $first_seen) = @_;
 
     # delete old entries
     $self->do("DELETE FROM $from_awl " .
 	      "WHERE sender_name = " . $self->quote($sender_name) .
 	      " AND sender_domain = " . $self->quote($sender_domain) .
-	      " AND host_ip = " . $self->quote($host));
+	      " AND src = " . $self->quote($host));
 
     # create new entry
     $self->do("INSERT INTO $from_awl (sender_name, sender_domain, " .
-	      "host_ip, last_seen) VALUES(" .
+	      "src, first_seen, last_seen) VALUES(" .
 	      $self->quote($sender_name) . "," .
 	      $self->quote($sender_domain) . "," .
-	      $self->quote($host) . ",NOW())");
+	      $self->quote($host) . "," .
+	      $self->quote($first_seen) . ",NOW())");
 }
 
 sub put_in_domain_awl {
-    my ($self, $sender_domain, $host) = @_;
+    my ($self, $sender_domain, $host, $first_seen) = @_;
 
     # delete old entries
     $self->do("DELETE FROM $domain_awl " .
 	      "WHERE sender_domain = " . $self->quote($sender_domain) .
-	      " AND host_ip = " . $self->quote($host));
+	      " AND src = " . $self->quote($host));
 
     # create new entry
-    $self->do("INSERT INTO $domain_awl (sender_domain, host_ip, " .
-	      "last_seen) VALUES(" .
+    $self->do("INSERT INTO $domain_awl (sender_domain, src, " .
+	      "first_seen, last_seen) VALUES(" .
 	      $self->quote($sender_domain) . "," .
-	      $self->quote($host) . ",NOW())");
+	      $self->quote($host) . "," .
+	      $self->quote($first_seen) . ",NOW())");
 }
 
 ## Update AWL entries ##
@@ -730,7 +759,7 @@ sub update_from_awl {
     $self->do("UPDATE $from_awl SET last_seen = NOW() " .
 	      "WHERE sender_name = " . $self->quote($sender_name) .
 	      " AND sender_domain = " . $self->quote($sender_domain) .
-	      " AND host_ip = " . $self->quote($host));
+	      " AND src = " . $self->quote($host));
 }
 
 sub update_domain_awl {
@@ -738,7 +767,7 @@ sub update_domain_awl {
 
     $self->do("UPDATE $domain_awl SET last_seen = NOW() " .
 	      "WHERE sender_domain = " . $self->quote($sender_domain) .
-	      " AND host_ip = " . $self->quote($host));
+	      " AND src = " . $self->quote($host));
 }
 
 # check from_awl entries for a domain/IP
@@ -746,7 +775,7 @@ sub count_from_awl {
     my ($self, $sender_domain, $host) = @_;
 
     my $sth = $self->prepare_cached("SELECT COUNT(*) FROM $from_awl " .
-				    "WHERE sender_domain = ? AND host_ip = ?");
+				    'WHERE sender_domain = ? AND src = ?');
     if (!defined $sth or !$sth->execute($sender_domain, $host)) {
 	$self->db_unavailable();
 	$self->log(1, "Error: couldn't access $from_awl table: $DBI::errstr");
@@ -794,15 +823,38 @@ sub delete_domain_from_mail_awl {
     my ($self, $domain, $host) = @_;
     $self->do("DELETE FROM $from_awl " .
 	      "WHERE sender_domain = " . $self->quote($domain) .
-	      " AND host_ip = " . $self->quote($host));
+	      " AND src = " . $self->quote($host));
 }
 
 # Active domain AWL for a domain/IP
 sub move_domain_from_mail_to_domain_awl {
     my ($self, $domain, $host) = @_;
 
-    $self->put_in_domain_awl($domain, $host);
+    my $first_seen = $self->get_first_seen_in_from_awl($domain, $host);
+    $self->put_in_domain_awl($domain, $host, $first_seen);
     $self->delete_domain_from_mail_awl($domain, $host);
+}
+
+sub get_first_seen_in_from_awl {
+    my ($self, $domain, $host) = @_;
+    my $sth = $self->prepare_cached("SELECT MIN(first_seen) FROM $from_awl " .
+				    'WHERE sender_domain = ? AND src = ?');
+
+    if (!defined $sth or !$sth->execute($sender_domain, $host)) {
+	$self->db_unavailable();
+	$self->log(1, "Error: couldn't access $from_awl table: $DBI::errstr");
+        return 0; # do as if table is empty
+    } else {
+	$self->db_available();
+    }
+
+    my $result = $sth->fetchall_arrayref();
+    if ($#$result != 0) {
+        $self->log(1, "Error: unexpected SQL result");
+	return 0; # do as if table is empty
+    } else {
+        return $result->[0][0];
+    }
 }
 
 ############
@@ -816,7 +868,7 @@ sub in_connect {
     # but more than $self->{sqlgrey}{reconnect_delay} minutes ago
     my $query = "SELECT 1 FROM $connect " .
             	"WHERE sender_name = ? AND sender_domain = ? " .
-	        "AND ip_addr = ? AND rcpt = ? " .
+	        "AND src = ? AND rcpt = ? " .
 		"AND first_seen BETWEEN now() - " .
 		$self->interval($self->{sqlgrey}{max_connect_age},
 				"HOUR") .
@@ -846,7 +898,7 @@ sub recently_in_connect {
     # last_seen less than $self->{sqlgrey}{reconnect_delay} minutes ago
     my $query = "SELECT 1 FROM $connect WHERE sender_name = ? " .
 	        "AND sender_domain = ? " .
-        	"AND ip_addr = ? AND rcpt = ? " .
+        	"AND src = ? AND rcpt = ? " .
 	        "AND first_seen >= now() - " .
 		$self->interval($self->{sqlgrey}{reconnect_delay},
 				"MINUTE");
@@ -874,12 +926,12 @@ sub put_in_connect {
     $self->do("DELETE FROM $connect " .
 	      "WHERE sender_name = " . $self->quote($sender_name) .
 	      " AND sender_domain = " . $self->quote($sender_domain) .
-	      " AND ip_addr = " . $self->quote($addr) .
+	      " AND src = " . $self->quote($addr) .
 	      " AND rcpt = " . $self->quote($rcpt));
 
     # create new entry
     $self->do("INSERT INTO $connect (sender_name, sender_domain, " .
-	      "ip_addr, rcpt, first_seen) " .
+	      "src, rcpt, first_seen) " .
 	      "VALUES(" .
 	      $self->quote($sender_name) . "," .
 	      $self->quote($sender_domain) . "," .
@@ -893,16 +945,17 @@ sub get_reconnect_delay {
 
     my $query;
     if ($self->{sqlgrey}{db_type} eq 'mysql') {
-        $query = "SELECT SEC_TO_TIME(UNIX_TIMESTAMP(NOW())-" .
+        $query = "SELECT first_seen, SEC_TO_TIME(UNIX_TIMESTAMP(NOW())-" .
 	                            "UNIX_TIMESTAMP(first_seen)) " .
 		 "FROM $connect ";
     } else {
-        $query = "SELECT now() - first_seen FROM $connect ";
-    } 
+        $query = "SELECT first_seen, now() - first_seen FROM $connect ";
+    }
     $query .= "WHERE sender_name = ? AND sender_domain = ? " .
-	      "AND ip_addr = ? AND rcpt = ?";
+	      "AND src = ? AND rcpt = ?";
     my $sth = $self->prepare_cached($query);
-    if (!defined $sth or !$sth->execute($sender_name, $sender_domain, $addr, $rcpt)) {
+    if (!defined $sth or !$sth->execute($sender_name, $sender_domain,
+					$addr, $rcpt)) {
 	$self->db_unavailable();
         $self->log(1, "Error: couldn't get reconnect delay: $DBI::errstr");
         return "sql error";
@@ -915,7 +968,7 @@ sub get_reconnect_delay {
 		      "$sender_name\@$sender_domain, $addr, $rcpt");
 	return "error: nothing in connect";
     } else {
-        return $result->[0][0];
+        return $result->[0];
     }
 }
 
@@ -926,7 +979,7 @@ sub delete_mail_ip_from_connect {
     $self->do("DELETE FROM $connect " .
 	      "WHERE sender_name = " . $self->quote($sender_name) .
 	      " AND sender_domain = " . $self->quote($sender_domain) .
-	      " AND ip_addr = " . $self->quote($addr));
+	      " AND src = " . $self->quote($addr));
 }
 
 # clean probable SPAM attempts and log them
@@ -936,7 +989,7 @@ sub cleanup_connect {
 
     if ($self->{server}{log_level} >= 2) {
         # Print probable SPAM:
-        my $query = "SELECT sender_name, sender_domain, ip_addr, " .
+        my $query = "SELECT sender_name, sender_domain, src, " .
                     "rcpt, first_seen " .
                     "FROM $connect " .
                     "WHERE first_seen < now() - " .
@@ -1317,8 +1370,9 @@ sub smtpd_access_policy($$)
     }
     # is it a reconnection ?
     if ($self->in_connect($sender_name, $sender_domain, $cltid, $recipient)) {
-	my $delay = $self->get_reconnect_delay($sender_name, $sender_domain,
-					       $cltid, $recipient);
+	my ($first_seen, $delay) =
+	    $self->get_reconnect_delay($sender_name, $sender_domain,
+				       $cltid, $recipient);
         $self->log(2, "$cltid: $sender_name" . "\@" . $sender_domain .
 		      " -> $recipient: reconnect($delay) ok, adding to AWL");
 	# check if we have others from the same domain in the from_awl
@@ -1339,7 +1393,8 @@ sub smtpd_access_policy($$)
 	    # add to mail-level AWL
 	    $self->log(2, "$deverp_sender_name" . "\@" . "$sender_domain: " .
 		          "$cltid added to mail-level AWL");
-	    $self->put_in_from_awl($deverp_sender_name, $sender_domain, $cltid);
+	    $self->put_in_from_awl($deverp_sender_name, $sender_domain,
+				   $cltid, $first_seen);
 	}
 	$self->delete_mail_ip_from_connect($sender_name, $sender_domain,
 					   $cltid);
@@ -1399,11 +1454,7 @@ sub main()
     # options parsing
     my %opt = ();
     GetOptions(\%opt, 'help|h', 'man', 'version', 'configfile|f=s',
-	'verbose|v', 'quiet|q', 'debug','daemonize|d', 'inet|i=i',
-	'user|u=s', 'group=s', 'pidfile|p=s', 'reconnect-delay|r=i',
-        'max-connect-age|m=i', 'awl-age|a=i','group-domain-level|g=i',
-        'db-type=s', 'db-name=s', 'db-host=s', 'db-user=s', 'db-pass=s',
-        'db-cleandelay=i', 'kill|k', 'prepend=i', 'greymethod=s')
+	'daemonize|d', 'kill|k')
 	or exit(1);
 
     if ($opt{help})    { help() }
@@ -1415,7 +1466,7 @@ sub main()
 
     # Are we on a killing spray ?
     if (defined $opt{kill}) {
-	my $pidfile = $opt{pidfile} ? $opt{pidfile} : $dflt{pidfile};
+	my $pidfile = $dflt{pidfile};
 	open(PIDFILE, '<' . $pidfile)
 	    or die "Coudn't read pidfile: $pidfile\n";
 	while (<PIDFILE>) { # should only have one pid
@@ -1427,20 +1478,12 @@ sub main()
     }
 
     # bind only localhost if no host is specified
-    if(defined $opt{inet} and $opt{inet}=~/^\d+$/) {
-        $opt{inet} = "localhost:$opt{inet}";
-    } elsif(defined $dflt{inet} and $dflt{inet}=~/^\d+$/) {
+    if(defined $dflt{inet} and $dflt{inet}=~/^\d+$/) {
         $dflt{inet} = "localhost:$dflt{inet}";
     }
 
     my $loglevel = 2;
-    if (defined $opt{debug}) {
-	$loglevel = 4;
-    } elsif (defined $opt{verbose}) {
-	$loglevel = 3;
-    } elsif (defined $opt{quiet}) {
-	$loglevel = 1;
-    } elsif (defined $dflt{debug}) {
+    if (defined $dflt{debug}) {
 	$loglevel = 4;
     } elsif (defined $dflt{verbose}) {
 	$loglevel = 3;
@@ -1465,21 +1508,17 @@ sub main()
 	    pod2usage(1);
 	}
     }
-    
-    # used 2 times in the following struct
-    my $cleandelay = $opt{'db-cleandelay'} || $dflt{db_cleandelay};
+
     # create Net::Server object and run it
     my $server = bless {
         server => {
             commandline     => [ $0, @ARGV_saved ],
-            port            => [ $opt{inet} || $dflt{inet} ],
+            port            => [ $dflt{inet} ],
             proto           => 'tcp',
-            user            => $opt{user} || $dflt{user},
-	    group           => $opt{group} || $dflt{group},
+            user            => $dflt{user},
+	    group           => $dflt{group},
             setsid          => $opt{daemonize} ? 1 : undef,
-            pid_file        => $opt{daemonize} ?
-		   $opt{pidfile} ? $opt{pidfile} : $dflt{pidfile}
-		   : undef,
+            pid_file        => $opt{daemonize} ? $dflt{pidfile} : undef,
             log_level       => $loglevel,
             log_file        => $opt{daemonize} ? 'Sys::Syslog' : undef,
             syslog_facility => 'mail',
@@ -1489,27 +1528,24 @@ sub main()
         },
         sqlgrey => {
 	    # min time before reconnect (min)
-            reconnect_delay => $opt{'reconnect-delay'}
-                 		    || $dflt{reconnect_delay},
+            reconnect_delay => $dflt{reconnect_delay},
 	    # max time before reconnect (hour)
-            max_connect_age => $opt{'max-connect-age'}
-		                    || $dflt{max_connect_age},
+            max_connect_age => $dflt{max_connect_age},
 	    # How long is an AWL entry valid (days)
-            awl_age         => $opt{'awl-age'} || $dflt{awl_age},
+            awl_age         => $dflt{awl_age},
 	    # How many from match a domain/IP before a switch to domain AWL
-	    domain_level    => $opt{'group-domain-level'}
-		                   || $dflt{group_domain_level},
-            next_maint      => time + $cleandelay,
-	    db_cleandelay   => $cleandelay, # between table cleanups (seconds)
+	    domain_level    => $dflt{group_domain_level},
+            next_maint      => time + $dflt{db_cleandelay},
+	    db_cleandelay   => $dflt{db_cleandelay}, # between table cleanups (seconds)
 
-            db_type         => $opt{'db-type'} || $dflt{db_type},
-            db_name         => $opt{'db-name'} || $dflt{db_name},
-            db_host         => $opt{'db-host'} || $dflt{db_host},
-	    db_user         => $opt{'db-user'} || $dflt{db_user},
-            db_pass         => $opt{'db-pass'} || $dflt{db_pass},
+            db_type         => $dflt{db_type},
+            db_name         => $dflt{db_name},
+            db_host         => $dflt{db_host},
+	    db_user         => $dflt{db_user},
+            db_pass         => $dflt{db_pass},
 	    db_available    => 1, # used to trigger e-mails
-	    prepend         => $opt{prepend}   || $dflt{prepend},
-	    greymethod      => $opt{greymethod} || $dflt{greymethod},
+	    prepend         => $dflt{prepend},
+	    greymethod      => $dflt{greymethod},
 	    reject_first    => $dflt{reject_first_attempt},
 	    reject_early    => $dflt{reject_early_reconnect}
 	    			|| $dflt{reject_first_attempt},
@@ -1575,7 +1611,7 @@ sub restart_open_hook() {
 sub restart_close_hook() {
     my $self = shift;
 
-    # SIGHUP triggers the whitelist reloading
+    # SIGUSR1 triggers the whitelist reloading
     $self->mark_reload_request();
 }
 
@@ -1639,56 +1675,18 @@ B<sqlgrey> [I<options>...]
  -h, --help                 display this help and exit
      --man                  display man page
      --version              output version information and exit
-*-q  --quiet                only log errors
-*-v, --verbose              increase log level
-*    --debug                further increase log level
-*-i, --inet=[HOST:]PORT     listen on PORT, localhost if HOST is not
-                            specified (default localhost:2501)
-*-a, --awl-age=N            connection is valid N days in auto-white-list
-                            (default: 60)
-*-g, --group-domain-level=N if N email adresses from the same IP and the
-                            same domain are in AWL, the whole domain is
-                            put in AWL, 0 disables (default: 2)
  -d, --daemonize            run in the background
-*-p, --pidfile=PATH         put daemon pid into this file
-                            (default: /var/run/sqlgrey.pid)
-*-u, --user=USER            run as USER (default: sqlgrey)
-*-r, --reconnect-delay=N    greylist (refuse mail) for N minutes after
-                            first connection (default: 1)
-*-m, --max-connect-age=N    mail transfer attempt is forgotten N hours
-                            after (default: 24)
-*    --greymethod=[full|classc|smart]
-                            How to greylist, default: smart
-*    --db-type=TYPE         DBD driver to use (mysql, Pg and SQLite are
-                            tested (default: Pg)
-*    --db-host=HOSTNAME     default: localhost
-*    --db-name=NAME         default: sqlgrey
-*    --db-user=USER         default: sqlgrey
-*    --db-pass=PASS         default: '' (empty password)
-*    --db-cleandelay=N	    delay between table cleanups in seconds
-     			    (default: 1800, 30 minutes)
-*    --prepend=[1|0]        default: 1 (add X-Greylist: headers)
  -k, --kill                 kill a running sqlgrey
                             (identified by 'pidfile' content)
  -f, --configfile=FILE      read config from FILE (default /etc/sqlgrey.conf)
                             expecting config_param=value lines,
                             - spaces are ignored,
                             - '#' is used for comments
-                            - parameter names using '-' (dash) on commandline
-                              use '_' (underscore)in config file
-                            - not supported in config file:
-                              help, version, man, daemonize, kill, configfile
-                            - verbose mode activated with "verbose = 1"
-                            example:
-                            -------------------------------------------------
-                            # SQLgrey conf file
-                            db_name = other_sqlgreydb
-                            inet = 25001           # bind on localhost:25001
-                            group_domain_level = 0 # no domain AWL
-                            -------------------------------------------------
 
-[*] these parameters are deprecated, please use the configfile. See the
-example packaged configfile for details and default values.
+See the default config file at /etc/sqlgrey/sqlgrey.conf for runtime parameters.
+If you got sqlgrey from sources, read the HOWTO file in the compressed archive.
+If it came prepackaged, look into the documentation tree for this file:
+/usr/share/doc/sqlgrey-<version>/ on most Linux distributions for example.
 
 =head1 DESCRIPTION
 
@@ -1730,7 +1728,7 @@ minimize the amount of data stored in database,
 
 minimize the amount of processing required to find an entry in the AWL.
 
-=item * 
+=item *
 
 don't impose any further mail delay when a C<CLIENT IP> / C<DOMAIN>
 couple is known.
@@ -1810,7 +1808,7 @@ mails (as required by the standard) or use unique return addresses.
 This is the reason why you should maintain whitelists for them.
 
 SQLgrey comes with a comprehensive whitelisting system. It can
-even be configured to fetch uptodate whitelists from a repository. See
+even be configured to fetch up-to-date whitelists from a repository. See
 the HOWTO for the details.
 
 =back
