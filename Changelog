@@ -1,6 +1,9 @@
-* Mon Dec 13 2004 Lionel Bouton <lionel-dev@bouton.name>
+* Tue Jan 11 2005 Lionel Bouton <lionel-dev@bouton.name>
  - 1.4.1 release
  - fix for invalid group id messages from Øystein Viggen
+ - allow reloading whitelists with SIGUSR1
+ - db_maintdelay user-configurable
+ - don't log pid anymore
 
 * Fri Dec 10 2004 Lionel Bouton <lionel-dev@bouton.name>
  - 1.4.0 release
