@@ -6,8 +6,8 @@ To begin with you need a sqlgrey user :
 #####################
 
 SQLite : quick and dirty way. The database is integrated with sqlgrey.
-MySQL : lightweight SGBD, lacks network whitelist support
-PostgreSQL : full-fledge SGBD, proprietary network types make network
+MySQL : lightweight DBRMS, lacks network whitelist support
+PostgreSQL : full-fledge DBRMS, proprietary network types make network
              whitelists useable.
 
 ###########

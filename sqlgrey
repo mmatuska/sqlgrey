@@ -75,11 +75,6 @@ sub db_supports_inet {
     return ($self->{sqlgrey}{db_type}) eq "Pg" ? 1 : 0;
 }
 
-sub db_supports_tstamp {
-    my $self = shift;
-    return ($self->{sqlgrey}{db_type}) eq "SQLite" ? 0 : 1;
-}
-
 sub database_check {
     my $self = shift;
 
@@ -130,6 +125,7 @@ sub initdb {
     # to reinit the connection, but better use mysql DBD code
     if ($self->{sqlgrey}{db_type} eq "mysql") {
         $self->{sqlgrey}{dbh}->{mysql_auto_reconnect} = 1;
+        print $self->{sqlgrey}{dbh}->{'serverinfo'};
     }
     if ($self->{sqlgrey}{db_type} eq "SQLite") {
         $self->{sqlgrey}{dbh}->func( 'now', 0, sub { return time }, 'create_function' );
@@ -448,7 +444,7 @@ sub recently_in_connect {
     # last_seen less than $self->{sqlgrey}{reconnect_delay} minutes ago
     my $query = "SELECT 1 FROM $connect WHERE sender_name = ? AND sender_domain = ? " .
         	"AND ip_addr = ? AND rcpt = ? " .
-	        "AND first_seen > now() - " . $self->interval($self->{sqlgrey}{reconnect_delay}, "MINUTE");
+	        "AND first_seen >= now() - " . $self->interval($self->{sqlgrey}{reconnect_delay}, "MINUTE");
     my $sth = $dbh->prepare($query);
     if (!$sth->execute($sender_name, $sender_domain, $addr, $rcpt)) {
         $self->log("Couldn't access $connect table: $!");
@@ -538,7 +534,6 @@ sub cleanup {
     $self->cleanup_from_awl();
     $self->cleanup_domain_awl();
     $self->cleanup_connect();
-    $self->{sqlgrey}{last_maint} = time;
 }
 
 # main routine: based on attributes specified as argument, return policy decision
@@ -555,6 +550,7 @@ sub smtpd_access_policy($$)
     if (time() > $self->{sqlgrey}{last_maint} + $self->{sqlgrey}{maint_delay}) {
         $self->log(2, "Maintenance delay expired: cleanup triggered");
         $self->cleanup();
+        $self->{sqlgrey}{last_maint} = time();
     }
 
     # whitelist check
