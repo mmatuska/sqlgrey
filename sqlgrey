@@ -573,7 +573,7 @@ sub deverp_user {
     $user =~ s/([\._-])[0-9A-Fa-f]+$/$1#/g;
     # Simple VERP substitution : replace numbers with '#'
     # will match VERP mailing-list message retransmissions
-    $user =~ s/\b\d+\b/#/g;
+    #$user =~ s/\b\d+\b/#/g;
 
     return $user;
 }
