@@ -57,6 +57,8 @@ $dflt{reconnect_delay}    = 1;            # 1 minute
 $dflt{max_connect_age}    = 24;           # 24 hours
 $dflt{awl_age}            = 60;           # 60 days
 $dflt{group_domain_level} = 2;            # 2 e-mail addr from same domain/IP
+$dflt{reject_first_attempt} = 'delay';    # Use 'delay' or 'immed'
+$dflt{reject_early_reconnect} = undef;    # Leave undef
 $dflt{db_type}            = 'Pg';
 $dflt{db_name}            = 'sqlgrey';
 $dflt{db_host}            = 'localhost';
@@ -1243,6 +1245,10 @@ sub smtpd_access_policy($$)
 {
     my ($self, $attr) = @_;
 
+    # Rejection codes
+    my $reject_first = $self->{sqlgrey}{reject_first};
+    my $reject_early = $self->{sqlgrey}{reject_early};
+
     # prepare lookup
     my ($sender_name,$sender_domain,$deverp_sender_name) =
 	$self->normalize_sender($attr->{sender});
@@ -1297,7 +1303,9 @@ sub smtpd_access_policy($$)
 				   $cltid, $recipient)) {
         $self->log(2, "reconnect too early: $cltid: " .
 	 	      "$sender_name\@$sender_domain -> $recipient");
-        return "defer_if_permit Greylisted for " .
+	$self->log(4, "Rejecting with: $reject_early  Greylisted for " .
+	           $self->{sqlgrey}{reconnect_delay} . " minutes");
+	return "$reject_early Greylisted for " .
 	    $self->{sqlgrey}{reconnect_delay} . " minutes";
     }
     # is it a reconnection ?
@@ -1334,7 +1342,9 @@ sub smtpd_access_policy($$)
     # new connection
     $self->log(2, "new: $cltid: $sender_name\@$sender_domain -> $recipient");
     $self->put_in_connect($sender_name, $sender_domain, $cltid, $recipient);
-    return "defer_if_permit Greylisted for " .
+    $self->log(4, "Rejecting with: $reject_first  Greylisted for " .
+	$self->{sqlgrey}{reconnect_delay} . " minutes");
+    return "$reject_first Greylisted for " .
 	$self->{sqlgrey}{reconnect_delay} . " minutes";
 }
 
@@ -1431,6 +1441,24 @@ sub main()
 	$loglevel = 1;
     }
 
+    # set the actual reject code values
+    if ($dflt{reject_first_attempt} eq 'delay') {
+    	$dflt{reject_first_attempt} = 'defer_if_permit';
+    } elsif ($dflt{reject_first_attempt} eq 'immed') {
+	$dflt{reject_first_attempt} = '450';
+    } else {
+    	pod2usage(1);
+    }
+    if (defined $dflt{reject_early_reconnect}) {
+	if ($dflt{reject_early_reconnect} eq 'delay') {
+	    $dflt{reject_early_reconnect} = 'defer_if_permit';
+	} elsif ($dflt{reject_early_reconnect} eq 'immed') {
+	    $dflt{reject_early_reconnect} = '450';
+	} else {
+	    pod2usage(1);
+	}
+    }
+    
     # used 2 times in the following struct
     my $cleandelay = $opt{'db-cleandelay'} || $dflt{db_cleandelay};
     # create Net::Server object and run it
@@ -1475,6 +1503,9 @@ sub main()
 	    db_available    => 1, # used to trigger e-mails
 	    prepend         => $opt{prepend}   || $dflt{prepend},
 	    greymethod      => $opt{greymethod} || $dflt{greymethod},
+	    reject_first    => $dflt{reject_first_attempt},
+	    reject_early    => $dflt{reject_early_reconnect}
+	    			|| $dflt{reject_first_attempt},
 	    admin_mail      => $dflt{admin_mail},
 	    warn_db         => 0, # mask SQL errors during db init
 	    mail_maxbucket  => 10, # max burst of mails
@@ -1601,35 +1632,35 @@ B<sqlgrey> [I<options>...]
  -h, --help                 display this help and exit
      --man                  display man page
      --version              output version information and exit
- -q  --quiet                only log errors
- -v, --verbose              increase log level
-     --debug                further increase log level
- -i, --inet=[HOST:]PORT     listen on PORT, localhost if HOST is not
+*-q  --quiet                only log errors
+*-v, --verbose              increase log level
+*    --debug                further increase log level
+*-i, --inet=[HOST:]PORT     listen on PORT, localhost if HOST is not
                             specified (default localhost:2501)
- -a, --awl-age=N            connection is valid N days in auto-white-list
+*-a, --awl-age=N            connection is valid N days in auto-white-list
                             (default: 60)
- -g, --group-domain-level=N if N email adresses from the same IP and the
+*-g, --group-domain-level=N if N email adresses from the same IP and the
                             same domain are in AWL, the whole domain is
                             put in AWL, 0 disables (default: 2)
  -d, --daemonize            run in the background
- -p, --pidfile=PATH         put daemon pid into this file
+*-p, --pidfile=PATH         put daemon pid into this file
                             (default: /var/run/sqlgrey.pid)
- -u, --user=USER            run as USER (default: sqlgrey)
- -r, --reconnect-delay=N    greylist (refuse mail) for N minutes after
+*-u, --user=USER            run as USER (default: sqlgrey)
+*-r, --reconnect-delay=N    greylist (refuse mail) for N minutes after
                             first connection (default: 1)
- -m, --max-connect-age=N    mail transfer attempt is forgotten N hours
+*-m, --max-connect-age=N    mail transfer attempt is forgotten N hours
                             after (default: 24)
-     --greymethod=[full|classc|smart]
+*    --greymethod=[full|classc|smart]
                             How to greylist, default: smart
-     --db-type=TYPE         DBD driver to use (mysql, Pg and SQLite are
+*    --db-type=TYPE         DBD driver to use (mysql, Pg and SQLite are
                             tested (default: Pg)
-     --db-host=HOSTNAME     default: localhost
-     --db-name=NAME         default: sqlgrey
-     --db-user=USER         default: sqlgrey
-     --db-pass=PASS         default: '' (empty password)
-     --db-cleandelay=N	    delay between table cleanups in seconds
+*    --db-host=HOSTNAME     default: localhost
+*    --db-name=NAME         default: sqlgrey
+*    --db-user=USER         default: sqlgrey
+*    --db-pass=PASS         default: '' (empty password)
+*    --db-cleandelay=N	    delay between table cleanups in seconds
      			    (default: 1800, 30 minutes)
-     --prepend=[1|0]        default: 1 (add X-Greylist: headers)
+*    --prepend=[1|0]        default: 1 (add X-Greylist: headers)
  -k, --kill                 kill a running sqlgrey
                             (identified by 'pidfile' content)
  -f, --configfile=FILE      read config from FILE (default /etc/sqlgrey.conf)
@@ -1648,6 +1679,9 @@ B<sqlgrey> [I<options>...]
                             inet = 25001           # bind on localhost:25001
                             group_domain_level = 0 # no domain AWL
                             -------------------------------------------------
+
+[*] these parameters are deprecated, please use the configfile. See the
+example packaged configfile for details and default values.
 
 =head1 DESCRIPTION
 
