@@ -67,6 +67,13 @@ if [ $1 = 0 ]; then
 fi
 
 %changelog
+* Mon Feb 14 2005 Lionel Bouton <lionel-dev@bouton.name>
+ - 1.4.4 release
+ - Autowhitelists understand SRS
+ - more VERP support for autowhitelists
+ - SQLgrey can warn by mail when the database is unavailable
+ - update_sqlgrey_whitelists doesn't rely on mktemp's '-t' parameter anymore.
+
 * Sun Feb 06 2005 Lionel Bouton <lionel-dev@bouton.name>
  - 1.4.3 release
  - log to stdout when not in daemon mode
