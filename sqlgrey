@@ -1,0 +1,1026 @@
+#!/usr/bin/perl -w
+
+# sqlgrey: a postfix greylisting policy server using an SQL backend
+# based on postgrey
+# Copyright 2004 (c) ETH Zurich
+# Copyright 2004 (c) Lionel Bouton
+
+#
+#    This program is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    This program is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with this program; if not, write to the Free Software
+#    Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+#
+
+# see the documentation with 'perldoc sqlgrey'
+
+package sqlgrey;
+use strict;
+use Pod::Usage;
+use Getopt::Long 2.25 qw(:config posix_default no_ignore_case);
+use Net::Server::Multiplex;
+use DBI;
+
+use vars qw(@ISA);
+@ISA = qw(Net::Server::Multiplex);
+
+my $VERSION='0.2';
+my $connect="connect";
+my $from_awl="from_awl";
+my $domain_awl="domain_awl";
+my $net_whitelist="net_whitelist";
+my $kill_myself = 0;
+
+########################
+## Database helper subs
+
+# fault (lost connection) tolerant do
+sub do {
+    my $self = shift;
+    my $query = shift;
+    if (! $self->{sqlgrey}{dbh}->do($query)) {
+        $self->log(2, "Warning: couldn't do query: $query: $!, reconnecting to DB");
+	$self->initdb();
+	$self->{sqlgrey}{dbh}->do($query)
+  	    or die "Error: db reconnection failed: $!";
+    }
+}
+
+sub table_exists {
+    my $self = shift;
+    my $tablename = shift;
+    my $dbh = $self->{sqlgrey}{dbh};
+    # we don't use $self->do here as it would trigger an
+    # infinite loop in case of db connection problems
+    #my $rows = $dbh->do("SHOW TABLES LIKE '$tablename'")
+    #    or die "Couldn't check for table $tablename existence\n";
+    #return ($rows eq "0E0") ? 0 : 1;
+    # Seems the most portable way to do it :-(
+    $dbh->do("SELECT 1 from $tablename LIMIT 0")
+        or return 0;
+    return 1;
+}
+
+sub db_supports_inet {
+    my $self = shift;
+    return ($self->{sqlgrey}{db_type}) eq "Pg" ? 1 : 0;
+}
+
+sub database_check {
+    my $self = shift;
+
+    if (! $self->table_exists("$from_awl")) {
+	$self->create_from_awl_table();
+    }
+    if (! $self->table_exists("$domain_awl")) {
+	$self->create_domain_awl_table();
+    }
+    if (! $self->table_exists("$connect")) {
+	$self->create_connect_table();
+    }
+    if ($self->db_supports_inet()) {
+        if (! $self->table_exists("$net_whitelist")) {
+            $self->create_net_whitelist_table();
+        }
+    }
+}
+
+sub cnctinfo {
+    my $self = shift;
+    my $dsn = "DBI:" . $self->{sqlgrey}{db_type};
+    if ($self->{sqlgrey}{db_type} eq "mysql") {
+        $dsn .= ":database=";
+    } elsif ($self->{sqlgrey}{db_type} eq "Pg") {
+        $dsn .= ":dbname=";
+    }
+    $dsn .= $self->{sqlgrey}{db_name} . ";host=" . $self->{sqlgrey}{db_host};
+    return $dsn;
+}
+
+# Here we connect to the database and initialise the database tables
+# if needed
+sub initdb {
+    my $self = shift;
+    $self->{sqlgrey}{dbh} = DBI->connect($self->cnctinfo(),
+					  $self->{sqlgrey}{db_user},
+					  $self->{sqlgrey}{db_pass})
+	or die "Can't connect to DB: $!";
+    # mysql drops the connection, we have some glue code
+    # to reinit the connection, but better use mysql DBD code
+    if ($self->{sqlgrey}{db_type} eq "mysql") {
+        $self->{sqlgrey}{dbh}->{mysql_auto_reconnect} = 1;
+    }
+    $self->database_check();
+}
+
+# platform dependant INTERVAL syntax is here
+sub interval {
+    my ($self, $nb, $unit) = @_;
+    if ($self->{sqlgrey}{db_type} eq "mysql") {
+        return "INTERVAL $nb $unit";
+    } elsif ($self->{sqlgrey}{db_type} eq "Pg") {
+        return "INTERVAL '" . "$nb $unit" . "'";
+    }
+}
+
+#
+# table creations
+sub create_from_awl_table {
+    my $self = shift;
+    # we don't use $self->do here as it would trigger an
+    # infinite loop in case of db connection problems
+    $self->{sqlgrey}{dbh}->do("CREATE TABLE $from_awl (sender_name char(64) NOT NULL, " .
+			       "sender_domain char(255) NOT NULL, host_ip char(15) NOT NULL, " .
+			       "last_seen timestamp NOT NULL, " .
+			       "PRIMARY KEY (sender_name, sender_domain, host_ip));")
+	or die "Couldn't create table $from_awl: $!\n";
+}
+
+sub create_domain_awl_table {
+    my $self = shift;
+    # we don't use $self->do here as it would trigger an
+    # infinite loop in case of db connection problems
+    $self->{sqlgrey}{dbh}->do("CREATE TABLE $domain_awl (sender_domain char(255) NOT NULL, " .
+			       "host_ip char(15) NOT NULL, last_seen timestamp NOT NULL, " .
+			       "PRIMARY KEY (sender_domain, host_ip));")
+	or die "Couldn't create table $from_awl: $!\n";
+}
+
+sub create_connect_table {
+    my $self = shift;
+    # we don't use $self->do here as it would trigger an
+    # infinite loop in case of db connection problems
+    # Note: no primary key, Mysql can't handle primary keys with more than 500 bytes
+    $self->{sqlgrey}{dbh}->do("CREATE TABLE $connect (sender_name char(64) NOT NULL, " .
+			       "sender_domain char(255) NOT NULL, ip_addr char(15) NOT NULL, " .
+			       "rcpt char(255) NOT NULL, first_seen timestamp NOT NULL);")
+	or die "Couldn't create table $connect: $!\n";
+}
+
+sub create_net_whitelist_table {
+    my $self = shift;
+    # we don't use $self->do here as it would trigger an
+    # infinite loop in case of db connection problems
+    $self->{sqlgrey}{dbh}->do("CREATE TABLE $net_whitelist (net inet NOT NULL, " .
+                               "PRIMARY KEY (net));")
+        or die "Couldn't create table $connect: $!\n";
+}
+
+################
+## Normalizers
+
+sub normalize_sender {
+    my $self = shift;
+    my $from = lc shift;
+    my ($user, $domain) = split(/@/, $from, 2);
+    #defined $domain or return $from;
+    # undefined user/domain will jeopardize matching entries in DB
+    if (! defined $user) {
+        $user = "undef";
+        # log to debug this
+        $self->log(2, "undefined user, from is '$from'");
+    }
+    # verp substitutions
+    # replace numbers with #
+    $user =~ s/\b\d+\b/#/g;
+    if (! defined $domain) {
+        $domain = "undef";
+        # log to debug this
+        $self->log(2, "undefined domain, from is '$from'");
+    }
+    return ($user,$domain);
+}
+
+sub normalize_rcpt {
+    my $self = shift;
+    my $to = lc shift;
+    my ($user, $domain) = split(/@/, $to, 2);
+    defined $domain or return $to;
+    # replace numbers with #
+    $user =~ s/\b\d+\b/#/g;
+    # trim to 255 chars ( "$user" . "@" . "$domain" can be 64 + 1 + 255 but db only supports 255)
+    return substr("$user\@$domain", 0, 255);
+}
+
+sub trim_spaces {
+     my $self = shift;
+     my $string = shift;
+     $string =~ s/^\s+//;
+     $string =~ s/\s+$//;
+     return $string;
+}
+
+##########################################
+## Grey listing related database access ##
+##########################################
+
+###########
+## AWL
+
+sub is_in_from_awl {
+    my ($self, $sender_name, $sender_domain, $host) = @_;
+    my $dbh = $self->{sqlgrey}{dbh};
+
+    # last_seen less than $self->{sqlgrey}{awl_age} days ago
+    my $sth = $dbh->prepare("SELECT 1 FROM $from_awl " .
+			    "WHERE sender_name = ? AND sender_domain = ? AND host_ip = ? AND " .
+			    "last_seen > now() - " . $self->interval($self->{sqlgrey}{awl_age}, "DAY"));
+    if (! $sth->execute($sender_name, $sender_domain, $host)) {
+	$self->log(2, "Error: couldn't access $from_awl table: $!");
+        return 0; # avoid accept
+    }
+    my $result = $sth->fetchall_arrayref();
+    if ($#$result != 0) {
+	return 0; # not a single entry
+    } else {
+	return 1; # one single entry (multiple entries are not allowed by design)
+    }
+}
+
+sub is_in_domain_awl {
+    my ($self, $sender_domain, $host) = @_;
+    my $dbh = $self->{sqlgrey}{dbh};
+
+    # last_seen less than $self->{sqlgrey}{awl_age} days ago
+    my $sth = $dbh->prepare("SELECT 1 FROM $domain_awl " .
+			    "WHERE sender_domain = ? AND host_ip = ? AND " .
+			    "last_seen > now() - " . $self->interval($self->{sqlgrey}{awl_age}, "DAY"));
+    if (!$sth->execute($sender_domain, $host)) {
+	$self->log(2, "Error: couldn't access $domain_awl table: $!");
+        return 0; # avoid accept
+    }
+    my $result = $sth->fetchall_arrayref();
+    if ($#$result != 0) {
+	return 0; # not a single entry
+    } else {
+	return 1; # one single entry (multiple entries are not allowed by design)
+    }
+}
+
+sub put_in_from_awl {
+    my ($self, $sender_name, $sender_domain, $host) = @_;
+
+    # delete old entries
+    $self->do("DELETE FROM $from_awl " .
+	      "WHERE sender_name = '$sender_name\' AND sender_domain = \'$sender_domain\' " .
+	      "AND host_ip = '$host\'");
+
+    # create new entry
+    $self->do("INSERT INTO $from_awl (sender_name, sender_domain, host_ip, last_seen) " .
+	      "VALUES('$sender_name\', \'$sender_domain\', \'$host\', NOW())");
+}
+
+sub put_in_domain_awl {
+    my ($self, $sender_domain, $host) = @_;
+
+    # delete old entries
+    $self->do("DELETE FROM $domain_awl " .
+	      "WHERE sender_domain = '$sender_domain\' " .
+	      "AND host_ip = '$host\'");
+
+    # create new entry
+    $self->do("INSERT INTO $domain_awl (sender_domain, host_ip, last_seen) " .
+	      "VALUES('$sender_domain\', \'$host\', NOW())");
+}
+
+sub update_from_awl {
+    my ($self, $sender_name, $sender_domain, $host) = @_;
+
+    $self->do("UPDATE $from_awl SET last_seen = NOW() " .
+	      "WHERE sender_name = '$sender_name\' AND sender_domain =\'$sender_domain\' " .
+	      "AND host_ip = '$host\'");
+}
+
+sub update_domain_awl {
+    my ($self, $sender_domain, $host) = @_;
+
+    $self->do("UPDATE $domain_awl SET last_seen = NOW() " .
+	      "WHERE sender_domain ='$sender_domain\' " .
+	      "AND host_ip = '$host\'");
+}
+
+sub count_from_awl {
+    my ($self, $sender_domain, $host) = @_;
+
+    my $dbh = $self->{sqlgrey}{dbh};
+
+    my $sth = $dbh->prepare("SELECT COUNT(*) FROM $from_awl " .
+			    "WHERE sender_domain = ? AND host_ip = ?");
+    if (!$sth->execute($sender_domain, $host)) {
+	self->log(2, "Error: couldn't access $from_awl table: $!");
+        return 0; # do as if table is empty
+    }
+
+    my $result = $sth->fetchall_arrayref();
+    if ($#$result != 0) {
+        $self->log(2, "Error: unexpected SQL result");
+	return 0; # do as if table is empty
+    } else {
+        return $result->[0][0];
+    }
+}
+
+sub cleanup_from_awl {
+    my ($self) = @_;
+
+    $self->do("DELETE FROM $from_awl " .
+	      "WHERE last_seen < now() - " . $self->interval($self->{sqlgrey}{awl_age}, "DAY"));
+}
+
+sub cleanup_domain_awl {
+    my ($self) = @_;
+
+    $self->do("DELETE FROM $domain_awl " .
+	      "WHERE last_seen < now() - " . $self->interval($self->{sqlgrey}{awl_age}, "DAY"));
+}
+
+sub delete_domain_from_mail_awl {
+    my ($self, $domain, $host) = @_;
+    $self->do("DELETE FROM $from_awl " .
+	      "WHERE sender_domain = '$domain\' AND host_ip = \'$host\'");
+}
+
+sub move_domain_from_mail_to_domain_awl {
+    my ($self, $domain, $host) = @_;
+
+    $self->put_in_domain_awl($domain, $host);
+    $self->delete_domain_from_mail_awl($domain, $host);
+}
+
+##############
+## Whitelist
+
+sub is_in_whitelist {
+    ## waits all parameters
+    ## for rcpt_whitelists for example
+    my ($self, $sender_name, $sender_domain, $addr, $rcpt) = @_;
+    my $dbh = $self->{sqlgrey}{dbh};
+    # don't try net_whitelist lookup if inet isn't supported
+    if (! $self->db_supports_inet()) {
+        return 0;
+    }
+
+    # Is it in a net referenced in the whitelists ?
+    my $query = "SELECT net FROM $net_whitelist " .
+                "WHERE ? <<= net";
+
+    my $sth = $dbh->prepare($query);
+    if (!$sth->execute($addr)) {
+        $self->log(2, "Error: couldn't access $connect table: $!");
+        return 1; # accept
+    }
+    my $result = $sth->fetchall_arrayref();
+    if ($#$result == -1) {
+        return 0; # nothing matches
+    } else {
+        my $msg = "$addr matches following entries in net_whitelist: ";
+        foreach my $net (@$result) {
+                $msg .= $net->[0] . " ";
+        }
+        $self->log(2, $msg);
+        return 1; # at least one entry matches
+    }
+}
+
+############
+## Connect
+
+sub in_connect {
+    my ($self, $sender_name, $sender_domain, $addr, $rcpt) = @_;
+    my $dbh = $self->{sqlgrey}{dbh};
+
+    # last_seen less than $self->{sqlgrey}{max_connect_age} hours ago but more than $self->{sqlgrey}{reconnect_delay} minutes ago
+    my $query = "SELECT 1 FROM $connect " .
+        	"WHERE sender_name = ? AND sender_domain = ? AND ip_addr = ? AND rcpt = ? " .
+		"AND first_seen BETWEEN now() - " . $self->interval($self->{sqlgrey}{max_connect_age}, "HOUR") .
+		"AND now() - " . $self->interval($self->{sqlgrey}{reconnect_delay}, "MINUTE");
+    my $sth = $dbh->prepare($query);
+    if (!$sth->execute($sender_name, $sender_domain, $addr, $rcpt)) {
+        $self->log(2, "Error: couldn't access $connect table: $!");
+        return 0; # force defer
+    }        
+    my $result = $sth->fetchall_arrayref();
+    if ($#$result != 0) {
+	return 0; # not a single entry
+    } else {
+	return 1; # one single entry (multiple entries are not allowed by design)
+    }
+}
+
+sub recently_in_connect {
+    my ($self, $sender_name, $sender_domain, $addr, $rcpt) = @_;
+    my $dbh = $self->{sqlgrey}{dbh};
+
+    # last_seen less than $self->{sqlgrey}{reconnect_delay} minutes ago
+    my $query = "SELECT 1 FROM $connect WHERE sender_name = ? AND sender_domain = ? " .
+        	"AND ip_addr = ? AND rcpt = ? " .
+	        "AND first_seen > now() - " . $self->interval($self->{sqlgrey}{reconnect_delay}, "MINUTE");
+    my $sth = $dbh->prepare($query);
+    if (!$sth->execute($sender_name, $sender_domain, $addr, $rcpt)) {
+        $self->log("Couldn't access $connect table: $!");
+        return 1; # force defer
+    }
+    my $result = $sth->fetchall_arrayref();
+    if ($#$result != 0) {
+	return 0; # not a single entry
+    } else {
+	return 1; # one single entry (multiple entries are not allowed by design)
+    }
+}
+
+sub put_in_connect {
+    my ($self, $sender_name, $sender_domain, $addr, $rcpt) = @_;
+
+    # delete old entries
+    $self->do("DELETE FROM $connect " .
+	      "WHERE sender_name = '$sender_name\' AND sender_domain = \'$sender_domain\' " .
+	      "AND ip_addr = '$addr\' AND rcpt = \'$rcpt\'");
+
+    # create new entry
+    $self->do("INSERT INTO $connect (sender_name, sender_domain, ip_addr, rcpt, first_seen) " .
+	      "VALUES('$sender_name\', \'$sender_domain\', \'$addr\', \'$rcpt\', NOW())");
+}
+
+sub get_reconnect_delay {
+    my ($self, $sender_name, $sender_domain, $addr, $rcpt) = @_;
+    my $dbh = $self->{sqlgrey}{dbh};
+
+    my $query;
+    if ($self->{sqlgrey}{db_type} eq "mysql") {
+        $query = "SELECT SEC_TO_TIME(UNIX_TIMESTAMP(NOW())-UNIX_TIMESTAMP(first_seen)) FROM $connect ";
+    } elsif ($self->{sqlgrey}{db_type} eq "Pg") {
+        $query = "SELECT now() - first_seen FROM $connect ";
+    }
+    $query .= "WHERE sender_name = ? AND sender_domain = ? AND ip_addr = ? AND rcpt = ?";
+    my $sth = $dbh->prepare($query);
+    if (! $sth->execute($sender_name, $sender_domain, $addr, $rcpt)) {
+        $self->log(2, "Error: couldn't get reconnect delay:$!");
+        return "sql error";
+    }
+    my $result = $sth->fetchall_arrayref();
+    if ($#$result != 0) {
+        $self->log(2, "Error: no connect in database for $sender_name\@$sender_domain, $addr, $rcpt");
+	return "error: nothing in connect";
+    } else {
+        return $result->[0][0];
+    }
+}
+
+sub delete_mail_ip_from_connect {
+    my ($self, $sender_name, $sender_domain, $addr) = @_;
+
+    $self->do("DELETE FROM $connect " .
+	      "WHERE sender_name = '$sender_name' AND sender_domain = '$sender_domain' " .
+	      "AND ip_addr = '$addr'");
+}
+
+sub cleanup_connect {
+    my ($self) = @_;
+    my $dbh = $self->{sqlgrey}{dbh};
+
+    # Print probable SPAM:
+    my $query = "SELECT sender_name, sender_domain, ip_addr, rcpt, first_seen FROM $connect " .
+	        "WHERE first_seen < now() - " . $self->interval($self->{sqlgrey}{max_connect_age}, "HOUR");
+    my $sth = $dbh->prepare($query);
+    if ($sth->execute()) {
+	my $result = $sth->fetchall_arrayref();
+	for my $spam (@{$result}) {
+	    $self->log(2, "Probable spam: " . $self->trim_spaces($$spam[2]) . ": " .
+                       $self->trim_spaces($$spam[0]) . "\@" . $self->trim_spaces($$spam[1]) .
+                       " -> " . $self->trim_spaces($$spam[3]) . " at " .
+                       $self->trim_spaces($$spam[4]));
+	}
+    } else {
+	$self->log(2, "Error: couldn't list detected spam attempts");
+    }
+    $self->do("DELETE FROM $connect " .
+	     "WHERE first_seen < now() - " . $self->interval($self->{sqlgrey}{max_connect_age}, "HOUR"));
+}
+
+## General cleanup
+sub cleanup {
+    my ($self) = @_;
+    $self->cleanup_from_awl();
+    $self->cleanup_domain_awl();
+    $self->cleanup_connect();
+    $self->{sqlgrey}{last_maint} = time;
+}
+
+# main routine: based on attributes specified as argument, return policy decision
+sub smtpd_access_policy($$)
+{
+    my ($self, $attr) = @_;
+
+    # prepare lookup
+    my ($sender_name,$sender_domain) = $self->normalize_sender($attr->{sender});
+    my $recipient = $self->normalize_rcpt($attr->{recipient});
+    my $addr = $attr->{client_address};
+    # Is it time for cleanups ?
+    # Note: cleanup only calls $self->do which reconnects to database in case of disconnection too...
+    if (time() > $self->{sqlgrey}{last_maint} + $self->{sqlgrey}{maint_delay}) {
+        $self->log(2, "Maintenance delay expired: cleanup triggered");
+        $self->cleanup();
+    }
+
+    # whitelist check
+    if ($self->is_in_whitelist($sender_name, $sender_domain, $addr, $recipient)) {
+        return 'dunno';
+    }
+    # domain scale awl check
+    if ($self->is_in_domain_awl($sender_domain, $addr)) {
+	$self->log(2, "domain_awl-match: updating $sender_domain, $addr");
+	# update awl entry
+	$self->update_domain_awl($sender_domain, $addr);
+	return 'dunno';
+    }
+    # address scale awl check
+    if ($self->is_in_from_awl($sender_name, $sender_domain, $addr)) {
+	$self->log(2, "from_awl-match: updating $addr: $sender_name\@$sender_domain");
+	# update awl entry
+	$self->update_from_awl($sender_name, $sender_domain, $addr);
+	return 'dunno';
+    }
+    # is it an early reconnect ?
+    if ($self->recently_in_connect($sender_name, $sender_domain, $addr, $recipient)) {
+        $self->log(2, "reconnect too early: $addr: $sender_name\@$sender_domain -> $recipient");
+        return "defer_if_permit Greylisted for $self->{sqlgrey}{reconnect_delay} minutes";
+    }
+    # is it a reconnection ?
+    if ($self->in_connect($sender_name, $sender_domain, $addr, $recipient)) {
+        $self->log(2, "$addr: $sender_name" . "\@" . "$sender_domain -> $recipient: reconnect ok, adding to AWL");
+	$self->log(2, "$addr: $sender_name" . "\@" . "$sender_domain -> $recipient: reconnect delay: " .
+		   $self->get_reconnect_delay($sender_name, $sender_domain, $addr, $recipient));
+	# check if we have others from the same domain in the from_awl
+	# add 1 for our sample and compare to the aggregation level
+	if (($self->{sqlgrey}{domain_level} != 0) and ($self->count_from_awl($sender_domain, $addr)+1 >= $self->{sqlgrey}{domain_level})) {
+	    # use domain-level AWL
+	    $self->move_domain_from_mail_to_domain_awl($sender_domain, $addr);
+	    $self->log(2, "$addr,$sender_domain reached " . $self->{sqlgrey}{domain_level} . ", using domain-level AWL now");
+	} else {
+	    # add to mail-level AWL
+	    $self->log(2, "$sender_name" . "\@" . "$sender_domain: $addr added to mail-level AWL");
+	    $self->put_in_from_awl($sender_name, $sender_domain, $addr);
+	}
+	$self->delete_mail_ip_from_connect($sender_name, $sender_domain, $addr);
+	return 'dunno';
+    }
+    # new connection
+    $self->log(2, "new: $addr: $sender_name\@$sender_domain -> $recipient");
+    $self->put_in_connect($sender_name, $sender_domain, $addr, $recipient);
+    return "defer_if_permit Greylisted for $self->{sqlgrey}{reconnect_delay} minutes";
+}
+
+#######################
+## Pidfile management
+
+sub pidfile {
+    my $self = shift;
+    my @pwent = getpwuid($self->{server}{user});
+    my $dir = $pwent[7];
+    return $dir . "/sqlgrey.pid";
+}
+
+sub killme
+{
+    my $self = shift;
+    $self->log(2, "sending TERM signal");
+    system("kill `cat " . $self->pidfile() . "`");
+    exit;
+}
+
+sub clean_exit
+{
+    my $self = shift;
+    $self->log(2, "exiting cleanly");
+    $self->unlink_pidfile();
+    exit;
+}
+
+sub unlink_pidfile
+{
+    my $self = shift;
+    unlink($self->pidfile());
+}
+
+sub create_pidfile
+{
+    my $self = shift;
+    open(PIDFILE, '>' . $self->pidfile())
+        or die "Couldn't create pidfile: $!\n";
+    print PIDFILE $$;
+    close(PIDFILE);
+}
+
+sub main()
+{
+    # save arguments for Net:Server HUP restart
+    my @ARGV_saved = @ARGV;
+
+    # parse options
+    my %opt = ();
+    GetOptions(\%opt, 'help|h', 'man', 'version',
+        'verbose|v', 'daemonize|d', 'unix|u=s', 'inet|i=s', 'user=s', 'pidfile=s',
+        'reconnect-delay=i', 'max-connect-age=i', 'awl-age|a=i',
+        'group-domain-level|g=i', 'db-type=s', 'db-name=s', 'db-host=s', 'db-user=s',
+        'db-pass=s', 'kill|k') or exit(1);
+    if($opt{help})     { pod2usage(1) }
+    if($opt{man})      { pod2usage(-exitstatus => 0, -verbose => 2) }
+    if($opt{version})  { print "sqlgrey $VERSION\n"; exit(0) }
+    if($opt{kill}) {
+        $kill_myself = 1;
+        $opt{daemonize} = 1; # force log by syslog
+    }
+
+    if (!defined $opt{kill}) {
+        defined $opt{unix} or defined $opt{inet} or
+            die "ERROR: --unix or --inet must be specified\n";
+    } else {
+        $opt{unix} = 1;
+    }
+
+    # bind only localhost if no host is specified
+    if(defined $opt{inet} and $opt{inet}=~/^\d+$/) {
+        $opt{inet} = "localhost:$opt{inet}";
+    }
+
+    # create Net::Server object and run it
+    my $server = bless {
+        server => {
+            commandline     => [ $0, @ARGV_saved ],
+            port            => [ $opt{inet} ? $opt{inet} : $opt{unix}."|unix" ],
+            proto           => $opt{inet} ? 'tcp' : 'unix',
+            user            => $opt{user} || 'sqlgrey',
+            setsid          => $opt{daemonize} ? 1 : undef,
+            pid_file        => $opt{daemonize} ? $opt{pidfile} : undef,
+            log_level       => $opt{verbose} ? 4 : 2,
+            log_file        => $opt{daemonize} ? 'Sys::Syslog' : undef,
+            syslog_facility => 'mail',
+            syslog_logsock  => 'unix',
+            syslog_ident    => 'sqlgrey',
+        },
+        sqlgrey => {
+            reconnect_delay => $opt{'reconnect-delay'}   || 5, # min time before reconnect (min)
+            max_connect_age => $opt{'max-connect-age'} || 12, # max time before reconnect (hour)
+            awl_age         => $opt{'awl-age'} || 60, # In days
+	    domain_level    => $opt{'group-domain-level'} || 2, # only 2
+            last_maint      => time,
+	    maint_delay     => 600, # every 10 minutes cleanup all tables
+ 	    # TODO move into conf
+            db_type         => $opt{'db-type'} || "mysql",
+            db_name         => $opt{'db-name'} || "sqlgrey",
+            db_host         => $opt{'db-host'} || "localhost",
+	    db_user         => $opt{'db-user'} || "sqlgrey",
+            db_pass         => $opt{'db-pass'} || "",
+        },
+    }, 'sqlgrey';
+
+    $server->run;
+}
+
+##### Net::Server::Multiplex methods:
+
+sub pre_loop_hook() {
+    my $self = shift;
+
+    if ($kill_myself) {
+        $self->killme();
+    }
+    $self->create_pidfile();
+
+    # be sure to put in syslog any warnings / fatal errors
+    if($self->{server}{log_file} eq 'Sys::Syslog') {
+        $SIG{__WARN__} = sub { Sys::Syslog::syslog('warning', "warning: $_[0]") };
+        $SIG{__DIE__}  = sub { Sys::Syslog::syslog('crit', "fatal: $_[0]"); die @_; };
+        $SIG{TERM}  = sub { $self->clean_exit(); };
+    }
+    $self->initdb();
+    $self->log(2, "Initial cleanup");
+    $self->cleanup();
+
+    if (defined $self->{server}{setsid}) {
+        # Detach from terminal
+        close(STDIN);
+        close(STDOUT);
+        close(STDERR);
+    }
+}
+
+
+sub mux_input()
+{
+    my ($self, $mux, $fh, $in_ref) = @_;
+    defined $self->{sqlgrey_attr} or $self->{sqlgrey_attr} = {};
+    my $attr = $self->{sqlgrey_attr};
+
+    # consume entire lines
+    while ($$in_ref =~ s/^([^\n]*)\n//) {
+        next unless defined $1;
+        my $in = $1;
+        if($in =~ /([^=]+)=(.*)/) {
+            # read attributes
+            $attr->{substr($1, 0, 512)} = substr($2, 0, 512);
+        }
+        elsif($in eq '') {
+            defined $attr->{request} or $attr->{request}='';
+            if($attr->{request} ne 'smtpd_access_policy') {
+                $self->{net_server}->log(2, "unrecognized request type: '$attr->{request}'");
+            }
+            else {
+                # decide
+                my $action = $self->{net_server}->smtpd_access_policy($attr);
+                # debug
+                if($self->{net_server}{server}{log_level}>=4) {
+                    my $a = 'request: ';
+                    $a .= join(' ', map {"$_=$attr->{$_}"} (sort keys %$attr));
+                    $a .= " action=$action";
+                    $self->{net_server}->log(1, $a);
+                }
+                # give answer
+                print $fh "action=$action\n\n";
+            }
+            $self->{sqlgrey_attr} = {};
+        }
+        else {
+             $self->{net_server}->log(2, "ignoring garbage: <".substr($in, 0, 100).">");
+        }
+    }
+}
+
+main;
+
+__END__
+
+=head1 NAME
+
+sqlgrey - Postfix Greylisting Policy Server
+
+=head1 SYNOPSIS
+
+B<sqlgrey> [I<options>...]
+
+ -h, --help                 display this help and exit
+     --version              output version information and exit
+ -v, --verbose              increase verbosity level
+
+ -u, --unix=PATH            listen on unix socket PATH
+ -i, --inet=[HOST:]PORT     listen on PORT, localhost if HOST is not specified
+ -a, --awl-age=N            connection is valid N days in auto-white-list (default: 60)
+ -g, --group-domain-level=N if N email adresses from the same IP and the same domain
+                            are in AWL, the whole domain is put in AWL, 0 disables
+                            (default: 2)
+ -d, --daemonize            run in the background
+     --pidfile=PATH         put daemon pid into this file
+     --user=USER            run as USER (default: sqlgrey)
+     --reconnect-delay=N    greylist (refuse mail) for N minutes after first connection
+                            (default: 5)
+     --max-connect-age=N    mail transfer attempt is forgotten N hours after
+                            (default: 12)
+     --db-type=TYPE         DBD driver to use (mysql and Pg are tested,
+                            Pg advised for functionnality (manual net whitelist)
+                            mysql advised for raw performance with MyIsam tables
+                            (default: mysql)
+     --db-host=HOSTNAME     default: localhost
+     --db-name=NAME         default: sqlgrey
+     --db-user=USER         default: sqlgrey
+     --db-pass=PASS         default: '' (empty password)
+
+=head1 DESCRIPTION
+
+Sqlgrey is a Postfix policy server implementing greylisting.
+
+When a request for delivery of a mail is received by Postfix via SMTP, the
+triplet C<CLIENT_IP> / C<SENDER> / C<RECIPIENT> is built. If it is the first
+time that this triplet is seen, or if the triplet was first seen less than
+I<reconnect-delay> seconds (300 is the default), then the mail gets rejected
+with a temporary error. Hopefully spammers or viruses will not try again later,
+as it is however required per RFC.
+
+In order to alleviate the reconnect delay, sqlgrey uses a 2-level auto-white-list
+(AWL) system:
+
+=over 4
+
+=item *
+
+As soon as a C<CLIENT IP> / C<SENDER> is accepted, it is added to an AWL.
+The couple expires when it isn't seen for more than I<awl-age> days
+(60 is the default).
+
+=item *
+
+If I<group-domain-level> C<SENDER>s (2 is the default) from the same domain or
+more use the same C<CLIENT IP>, another AWL is used based on a
+C<CLIENT IP> / C<DOMAIN> couple.
+This couple expires after awl-age days too. This AWL is meant to be used on
+high throughput sites in order to :
+
+=over 4
+
+=item *
+
+minimize the amount of data stored in database,
+
+=item *
+
+minimize the amount of processing required to find an entry in the AWL.
+
+=item * 
+
+don't impose any further mail delay when a C<CLIENT IP> / C<DOMAIN> couple is
+known.
+
+=back
+
+It can be disabled by setting I<group-domain-level> to 0.
+
+=back
+
+General idea:
+
+When a SMTP client has been accepted once, if the IP isn't dynamic,
+greylisting the IP again is only a waste of time when it sends another e-mail.
+As we already know that this IP runs an RFC-compliant MTA (at least the 4xx error
+code handling) and will get the new e-mail through anyway. 
+
+In the case of mail relays, these AWLs works very well as the same senders
+and mail domains are constantly coming through the same IP addresses -E<gt> the
+e-mails are quickly accepted on the first try.
+In the case of individual SMTP servers, this works well if the IP is fixed too.
+When using a floating IP address, the AWLs are defeated, but it should be the
+least common case by far.
+
+Why do we put the domain in the AWL and not the IP only ? If we did only store IP
+addresses, polluting the AWL would be far too easy. It would only take one correctly
+configured MTA sending one e-mail from one IP one single time to put it in a
+whitelist used whatever future mails from this IP look like.
+
+With this AWL system, one single mail can only allow whitelisting of mails from a
+single sender from the same IP...
+
+=head1 INSTALLATION
+
+=over 4
+
+=item *
+
+Create a C<sqlgrey> user
+
+=item *
+
+Write an init script to start sqlgrey at boot and start it. Like this for example:
+
+ sqlgrey --inet=10023 -d
+
+=back
+
+=head1 CONFIGURATION
+
+=head2 General
+
+=over 4
+
+=item *
+
+Start by adding check_policy_service after reject_unauth_destination in
+/etc/postfix/main.cf :
+
+ smtpd_recipient_restrictions =
+               ...
+               reject_unauth_destination
+               check_policy_service inet:127.0.0.1:10023
+
+=item *
+
+Be aware that some servers do not behave correctly and do not resend mails (as
+required in the standard) or use complicated unique return addresses.
+This is the reason why you should maintain whitelists for them. 
+
+=back
+
+=head2 WhiteListing
+
+=over 4
+
+=item *
+
+If you use PostgreSQL, then sqlgrey supports manual whitelisting. Simply add
+networks to the net_whitelist table :
+
+=over 2
+
+=item +
+
+for the a.b.c.d IP address :
+psql> INSERT INTO net_whitelist (ip_net) VALUES ('a.b.c.d/32');
+
+=item +
+
+for the 193.43.57.0-255 class C network :
+psql> INSERT INTO net_whitelist (ip_net) VALUES ('193.43.57.0/24');
+
+=back
+
+=item *
+
+If you don't use PosgreSQL, you can't use the net_whitelist table to add
+trusted networks, you'll have to use whitelisting at postfix's level.
+An example sqlgrey_client_access file is provided, you must put it in /etc/postfix
+and postmap it.
+
+Then you need to configure postfix to use the whitelist file.
+Edit /etc/main.cf and insert check_client_access in smtpd_recipient_restrictions :
+
+ smtpd_recipient_restrictions =
+               ...
+               reject_unauth_destination
+               check_client_access    hash:/etc/postfix/sqlgrey_client_access
+               check_policy_service inet:127.0.0.1:10023
+
+Simply remove the check_client_access line if you don't need it.
+
+=back
+
+=head2 Disabling greylisting for some users
+
+If you want to disable greylisting for some users you can use 
+another file, users that do not want greylisting are listed  like this:
+
+/etc/postfix/sqlgrey_recipient_access:
+  i_like_spam@ee.ethz.ch                OK
+
+Then you'll add a check_recipient_access in main.cf:
+ smtpd_recipient_restrictions =
+               ...
+               reject_unauth_destination
+               check_client_access    hash:/etc/postfix/sqlgrey_client_access
+               check_recipient_access hash:/etc/postfix/sqlgrey_recipient_access
+               check_policy_service inet:127.0.0.1:10023
+
+=head1 SEE ALSO
+
+See L<http://www.greylisting.org/> for a description of what greylisting is
+and L<http://www.postfix.org/SMTPD_POLICY_README.html> for a description of how
+Postfix policy servers work.
+
+=head1 COPYRIGHT
+
+Copyright (c) 2004 by Lionel Bouton.
+
+=head1 LICENSE
+
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 2 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License along
+with this program; if not, write to the Free Software Foundation, Inc.,
+59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+
+=head1 AUTHOR
+
+S<Lionel Bouton E<lt>lionel-dev@bouton.nameE<gt>>
+
+=head1 HISTORY
+
+ 2004-08-07 lionel: v1.01 bug fix for space trimming
+ 2004-08-03 lionel: v1.01 trim spaces before logging possible spams 
+ 2004-08-03 lionel: v1.0 added license reference at the top
+                    included in a more packaged release
+ 2004-07-30 lionel: Bugfix: couldn't match on undefined sender
+            debug code added
+ 2004-07-30 lionel: Removed NetAddr::IP dependency
+ 2004-07-17 lionel: Default max-age pushed to 12 hours instead of 5
+            (witnessed more than 6 hour fors a mailing-list subscription system)
+ 2004-07-02 lionel: Documentation
+ 2004-06-31 lionel: PostgreSQL support added
+ 2004-06-29 lionel: various cleanups and bug hunting
+ 2004-06-28 lionel: 2-level AWL support
+ 2004-06-27 lionel: Initial Version, replaced BDB by mysql in postgrey
+
+=cut
+
+# Emacs Configuration
+#
+# Local Variables:
+# mode: cperl
+# eval: (cperl-set-style "PerlStyle")
+# mode: flyspell
+# mode: flyspell-prog
+# End:
+#
+# vi: sw=4 et

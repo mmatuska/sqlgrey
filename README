@@ -1,0 +1,19 @@
+  #####################################################
+  # Sqlgrey 1.0 - a postfix greylisting policy server #
+  #####################################################
+
+
+Requires :
+
+- Perl
+- Net::Server (Perl Module)
+- IO::Multiplex (Perl Module)
+- perl-DBI (Perl Module)
+- Postfix 2.1
+
+Documentation :
+
+See POD documentation. Execute:
+
+  perldoc sqlgrey
+
