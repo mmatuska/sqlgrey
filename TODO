@@ -1,3 +1,8 @@
+- make header content user configurable with some predefined macros.
+  _DELAY_ for example.
+
+- check the bug reported about .local whitelists not being used anymore
+  
 - bug with multiple connect entries matching a reconnection (only in multiple
   SQLgrey instances configs and in a rare race condition) to fix
   -> accept multiple connect entries in "in_connect(), recently_in_connect()"
