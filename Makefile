@@ -25,7 +25,7 @@ manpage:
 clean:
 	rm -f sqlgrey.1
 	rm -f *~ init/*~ etc/*~
-	rm -rf .svn
+	rm -rf .svn # damn CVS won't remove this one
 
 install: all
 	$(INSTALL) -d -m 755 $(SBINDIR)
@@ -38,6 +38,8 @@ install: all
 	$(INSTALL) -m 644 etc/sqlgrey.conf $(CONFDIR)
 	$(INSTALL) -m 644 etc/clients_ip_whitelist $(CONFDIR)
 	$(INSTALL) -m 644 etc/clients_fqdn_whitelist $(CONFDIR)
+	$(INSTALL) -m 644 etc/dyn_fqdn.regexp $(CONFDIR)
+	$(INSTALL) -m 644 etc/smtp_server.regexp $(CONFDIR)
 	$(INSTALL) -m 644 sqlgrey.1 $(MANDIR)
 
 rh-install: install

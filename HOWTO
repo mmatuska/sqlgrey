@@ -181,3 +181,32 @@ What's left to you is the Postfix and Database setup.
 The sourceforge site (http://sqlgrey.sourceforge.net/) points to the
 latest ebuild available. See http://linuxreviews.org/gentoo/ebuilds/
 for how to use it.
+
+If you have followed the Gentoo Virtual Mailhosting guide and want to control
+in MySQL which domain has greylisting, then do the following:
+
+* In MySQL change the transport table:
+
+mysql> use mailsql;
+mysql> ALTER TABLE transport ADD greylisting tinyint(1) NOT NULL default '0';
+
+* Create a map for Postfix:
+create a /etc/postfix/mysql-sqlgrey-enabled-domains.cf file
+## BEGIN ##
+user			= mailsql
+password		= $password
+dbname			= mailsql
+table			= transport
+select_field		= 'greylist_policy'
+where_field		= domain
+additional_conditions	= AND greylisting='1'
+hosts			= unix:/var/run/mysqld/mysqld.sock
+## END ##
+
+* In Postfix main.cf add/change:
+proxy_read_maps		= proxy:mysql:/etc/postfix/greylist_enabled_domain.mysql
+smtpd_restriction_classes = greylist_policy
+greylist_policy		= check_policy_service inet:127.0.0.1:2501
+smtpd_recipient_restrictions = ....
+	check_recipient_access proxy:mysql:/etc/postfix/greylist_enabled_domain.mysql
+	reject_unauth_destination
