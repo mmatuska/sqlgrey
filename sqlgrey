@@ -539,7 +539,6 @@ sub cnctinfo {
     if (! $self->SQLite()) {
         $dsn .= ";host=" . $self->{sqlgrey}{db_host};
     }
-    $self->log(1, "DSN: $dsn");
     return $dsn;
 }
 
@@ -1049,7 +1048,7 @@ sub get_reconnect_delay {
 		      "$sender_name\@$sender_domain, $addr, $rcpt");
 	return "error: nothing in connect";
     } else {
-        return $result->[0];
+        return $result->[0][0], $result->[0][1];
     }
 }
 
