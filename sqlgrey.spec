@@ -37,7 +37,7 @@ make clean
 %defattr(-,root,root)
 /etc/init.d/sqlgrey
 /usr/sbin/sqlgrey
-/usr/sbin/update_sqlgrey_whitelists
+/usr/sbin/update_sqlgrey_config
 /usr/share/man/man1/sqlgrey.1.gz
 %doc README HOWTO Changelog FAQ TODO
 %defattr(644,root,root)

@@ -34,7 +34,7 @@ install: all
 	$(INSTALL) -d -m 755 $(INITDIR)
 	$(INSTALL) -d -m 755 $(MANDIR)
 	$(INSTALL) -m 755 sqlgrey $(SBINDIR)
-	$(INSTALL) -m 755 update_sqlgrey_whitelists $(SBINDIR)
+	$(INSTALL) -m 755 update_sqlgrey_config $(SBINDIR)
 	$(INSTALL) -m 644 etc/sqlgrey.conf $(CONFDIR)
 	$(INSTALL) -m 644 etc/clients_ip_whitelist $(CONFDIR)
 	$(INSTALL) -m 644 etc/clients_fqdn_whitelist $(CONFDIR)

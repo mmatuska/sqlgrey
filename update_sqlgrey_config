@@ -76,9 +76,13 @@ done
 for todownload in $TOUPDATE
 do
     echo "updating $MYDIR/$todownload:"
-    rm $todownload
+    rm $todownload 2>/dev/null
     $WGET -N -q http://$whitelists_host/$todownload
-    $DIFF -u $MYDIR/$todownload $todownload
+    if [ -f $MYDIR/$todownload ]; then
+	$DIFF -u $MYDIR/$todownload $todownload
+    else
+	echo "new file: $todownload"
+    fi
 done
 
 md5sum -c MD5SUMS >/dev/null 2>/dev/null
