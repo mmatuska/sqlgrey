@@ -29,6 +29,7 @@ use Pod::Usage;
 use Getopt::Long 2.25 qw(:config posix_default no_ignore_case);
 use Net::Server::Multiplex;
 use DBI;
+use POSIX ":sys_wait_h";
 
 use vars qw(@ISA);
 @ISA = qw(Net::Server::Multiplex);
@@ -83,7 +84,10 @@ my $dyn_fqdn_regexp_file     = $CONF_DIR . 'dyn_fqdn.regexp';
 
 my $prepend = 'PREPEND X-Greylist: ';
 
-my $reload = 0; # used to signal a regexps/whitelists reload request
+my $reload = 0; # non-zero signals a regexps/whitelists reload request
+
+my $ref_to_sqlgrey; # we need this global var to access sqlgrey functions
+                    # in signal handlers
 
 # Send mails
 sub sendmail {
@@ -583,12 +587,14 @@ sub initdb {
 
 sub connectdb {
     my $self = shift;
-    $self->{sqlgrey}{dbh} = DBI->connect_cached($self->cnctinfo(),
-						$self->{sqlgrey}{db_user},
-						$self->{sqlgrey}{db_pass},
-						{ PrintError => 0,
-						  AutoCommit => 1 }
-					       )
+    # we can't use connect_cached as we create another connection
+    # in the child responsible for cleanups
+    $self->{sqlgrey}{dbh} = DBI->connect($self->cnctinfo(),
+					 $self->{sqlgrey}{db_user},
+					 $self->{sqlgrey}{db_pass},
+					 { PrintError => 0,
+					   AutoCommit => 1 }
+					)
 	or $self->log(1, "Can't connect to DB: $DBI::errstr");
 
     # mysql drops the connection, we have some glue code
@@ -600,6 +606,13 @@ sub connectdb {
     if ($self->SQLite()) {
         $self->{sqlgrey}{dbh}->func('now', 0, sub { return time },
 				    'create_function' );
+    }
+}
+
+sub disconnectdb {
+    my $self = shift;
+    if (defined $self->{sqlgrey}{dbh}) {
+	$self->{sqlgrey}{dbh}->disconnect();
     }
 }
 
@@ -1139,6 +1152,32 @@ sub cleanup {
     $self->log(2, 'Spent ' . $time . "s cleaning: from_awl ($frows) domain_awl ($drows) connect ($crows)");
 }
 
+## Forked cleanup
+sub fork_cleanup {
+    my $self = shift;
+    my $pid = fork();
+    if (!defined $pid) {
+	$self->log(1, 'Couldn\'t fork child: no cleanup!');
+    } elsif ($pid == 0) { # child
+	$self->log(2, "Forked cleanup child ($$)");
+	# close the listening sockets they are our father responsibility
+#	foreach my $sock ( @{$self->{server}{sock}} ) {
+#	    $sock->close();
+#	}
+	# don't destroy the old dbh (the connection is used by our father)
+	$self->{sqlgrey}{dbh}->{InactiveDestroy} = 1;
+	# we *WANT* a new DB connection or we will delay other processings
+	# or worse send garbage to the DB
+	$self->connectdb();
+	$self->cleanup();
+	# we don't want nasty error messages saying we should have destroyed
+	# an out-of-scope dbh
+	$self->disconnectdb();
+	$self->log(2, "Cleanup child exit ($$)");
+	exit;
+    }
+}
+
 ##################
 ## Whitelisting ##
 ##################
@@ -1232,7 +1271,7 @@ sub read_an_fqdn_whitelist {
     my $system_whitelist;
 
     if (! open (FILE, '<' . $file)) {
-	$self->log(1, "Warning: $file not found or readable");
+	$self->log(1, "Warning: $file not found or unreadable");
 	$whitelist->{system} = $system_whitelist;
 	$whitelist->{domain} = \@domain_whitelist;
 	$whitelist->{regexp} = \@re_whitelist;
@@ -1522,7 +1561,7 @@ sub smtpd_access_policy($$)
     $self->update_dbnow();
     # Is it time for cleanups ?
     if (time() > $self->{sqlgrey}{next_maint}) {
-        $self->cleanup();
+        $self->fork_cleanup();
         $self->{sqlgrey}{next_maint} = time() + $self->{sqlgrey}{db_cleandelay};
     }
     # domain scale awl check
@@ -1760,6 +1799,9 @@ sub main()
 sub pre_loop_hook() {
     my $self = shift;
 
+    # store ourselves
+    $ref_to_sqlgrey = $self;
+
     # be sure to put in syslog any warnings / fatal errors
     if($self->{server}{log_file} eq 'Sys::Syslog') {
         $SIG{__WARN__} = sub {Sys::Syslog::syslog('warning', "warning: $_[0]")};
@@ -1771,7 +1813,7 @@ sub pre_loop_hook() {
 
     $self->initdb();
     $self->log(4, "Initial cleanup");
-    $self->cleanup();
+    $self->fork_cleanup();
     $self->init_whitelists();
     $self->init_smart_regexps();
 
