@@ -562,7 +562,7 @@ sub deverp_user {
     ## Try to match single-use addresses
     # SRS (first and subsequent levels of forwarding)
     $user =~ s/^SRS0=[^=]+=[^=]+=([^=]+)=([^=]+)^/SRS0=#=#=$1=$2/;
-    $user =~ s/^SRS1=[^=]+=([^=]+)=[^=]+=([^=]+)=([^=]+)$/SRS1=#=$1=#=#=$2=$3/;
+    $user =~ s/^SRS1=[^=]+=([^=]+)(=+)[^=]+=[^=]+=([^=]+)=([^=]+)$/SRS1=#=$1$2#=#=$3=$4/;
     # strip extension, used sometimes for mailing-list VERP
     $user =~ s/\+.*//;
     # strip hexadecimal sequences (doable in one regexp ?)
