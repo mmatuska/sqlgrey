@@ -119,7 +119,9 @@ sub initdb {
     my $self = shift;
     $self->{sqlgrey}{dbh} = DBI->connect($self->cnctinfo(),
 					  $self->{sqlgrey}{db_user},
-					  $self->{sqlgrey}{db_pass})
+					  $self->{sqlgrey}{db_pass},
+                                        { PrintError => 0, AutoCommit => 1 }
+                                        )
 	or die "Can't connect to DB: $!";
     # mysql drops the connection, we have some glue code
     # to reinit the connection, but better use mysql DBD code

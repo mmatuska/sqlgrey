@@ -1,5 +1,5 @@
 %define name sqlgrey
-%define ver  1.1
+%define ver  1.1.1
 %define rel  1
 
 Summary:   SQLgrey is a postfix grey-listing policy service.
@@ -40,12 +40,14 @@ make clean
 %doc sqlgrey_client_access README HOWTO
 
 %post
-if ! /usr/bin/id sqlgrey 2>/dev/null; then /usr/sbin/adduser -m -k /dev/null sqlgrey; fi
+if ! /usr/bin/id sqlgrey >/dev/null 2>/dev/null; then /usr/sbin/adduser -m -k /dev/null sqlgrey; fi
 
 %postun
 /usr/sbin/userdel sqlgrey
 
 %changelog
+* Wed Sep 22 2004 Lionel Bouton <lionel-dev@bouton.name>
+- Fixed mysql support
 
 * Tue Sep 21 2004 Lionel Bouton <lionel-dev@bouton.name>
 - SQLite support.
