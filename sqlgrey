@@ -103,15 +103,19 @@ sub sendmail {
 	}
 
         # actual mail sending
-        system("echo '$content' | mail -s '$subject' $self->{sqlgrey}{admin_mail}");
-        if ($? == -1) {
-            $self->log(2, "failed to send mail: $!\n");
-        } elsif ($? & 127) {
-            $self->log(2, sprintf("send mail child died with signal %d, %s coredump\n",
-				  ($? & 127),  ($? & 128) ? 'with' : 'without'));
-        } else {
-            $self->log(2, sprintf("send mail child exited with value %d\n", $? >> 8));
-        }
+        my $return = system("echo '$content' | mail -s '$subject' $self->{sqlgrey}{admin_mail}");
+	if ($return != 0) {
+	    if ($? == -1) {
+		$self->log(2, "failed to send mail: $!\n");
+	    } elsif ($? & 127) {
+		$self->log(2, sprintf("send mail child died with " .
+				      "signal %d, %s coredump\n",
+				      ($? & 127),  ($? & 128) ?
+				      'with' : 'without'));
+	    } else {
+		$self->log(2, sprintf("send mail child exited with value %d\n",
+				      $? >> 8));
+	    }
 
 	# empty bucket
 	$self->{sqlgrey}{mail_bucket}--;
