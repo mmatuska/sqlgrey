@@ -1,5 +1,5 @@
 %define name sqlgrey
-%define ver  1.5.1
+%define ver  1.5.2
 %define rel  1
 
 Summary:   SQLgrey is a postfix grey-listing policy service.
@@ -38,7 +38,7 @@ make clean
 /etc/init.d/sqlgrey
 /usr/sbin/sqlgrey
 /usr/sbin/update_sqlgrey_config
-/usr/share/man/man1/sqlgrey.1.gz
+/usr/share/man/man1/sqlgrey.1*
 %doc README HOWTO Changelog FAQ TODO
 %defattr(644,root,root)
 %config(noreplace) /etc/sqlgrey/sqlgrey.conf
@@ -49,14 +49,8 @@ make clean
 
 %pre
 getent group sqlgrey > /dev/null || /usr/sbin/groupadd sqlgrey
-#if [ `getent group sqlgrey | wc -l` = 0 ]; then
-#        /usr/sbin/groupadd sqlgrey
-#fi
 getent passwd sqlgrey > /dev/null || /usr/sbin/useradd -g sqlgrey \
      -d /var/sqlgrey sqlgrey
-#if [ `getent passwd sqlgrey | wc -l` = 0 ]; then
-#        /usr/sbin/useradd -g sqlgrey -d /var/sqlgrey sqlgrey
-#fi
 
 %postun
 if [ $1 = 0 ]; then
@@ -69,6 +63,10 @@ if [ $1 = 0 ]; then
 fi
 
 %changelog
+* Thu Mar 02 2005 Lionel Bouton <lionel-dev@bouton.name>
+ - 1.5.2 release
+ - optimize SQL queries by avoiding some now() function calls
+
 * Wed Mar 01 2005 Lionel Bouton <lionel-dev@bouton.name>
  - 1.5.1 release
  - replaced smart algorithm with Michel Bouissou's one

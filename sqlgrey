@@ -33,7 +33,7 @@ use DBI;
 use vars qw(@ISA);
 @ISA = qw(Net::Server::Multiplex);
 
-my $VERSION = "1.5.1";
+my $VERSION = "1.5.2";
 my $software = 'SQLgrey-' . "$VERSION";
 
 my $DB_VERSION = 2;
@@ -251,27 +251,54 @@ sub MySQL {
     return ($self->{sqlgrey}{db_type} eq 'mysql');
 }
 
-# INTERVAL syntax is platform dependant
-sub interval {
+# build a SQL representation of a timestamp with a given
+# interval from now
+# we use $self->{sqlgrey}{dbnow} to make sure the SQL function
+# now() can't make the optimizer think the value can change
+# and make the DB evaluate it for *each* row of the table we'll select from
+sub past_tstamp {
     my ($self, $nb, $unit) = @_;
     if ($self->MySQL()) {
 	# MySQL doesn't want any ' char
-        return "INTERVAL $nb $unit";
+        return 'timestamp ' . $self->{sqlgrey}{dbnow} .
+	    " - INTERVAL $nb $unit";
     } elsif ($self->SQLite()) {
+	my $delay;
 	# SQLite doesn't recognise INTERVAL
         if ($unit eq 'DAY') {
-            return $nb * 24 * 60 * 60;
+            delay = $nb * 24 * 60 * 60;
         } elsif ($unit eq 'HOUR') {
-            return $nb * 60 * 60;
+            delay = $nb * 60 * 60;
         } elsif ($unit eq 'MINUTE') {
-            return $nb * 60;
+            delay = $nb * 60;
         } else {
             # catch syntax errors
             $self->mydie('Interval error', 'interval(' . $nb . ', ' . $unit . ') for SQLite,'
 		. " sqlgrey doesn't recognise $unit UNIT");
         }
+	return 'now() - ' . $delay;
     } else { # use PostgreSQL syntax (probably the most SQL compliant)
-        return "INTERVAL '" . "$nb $unit" . "'";
+        return 'timestamp ' . $self->{sqlgrey}{dbnow} .
+	    "INTERVAL '" . "$nb $unit" . "'";
+    }
+}
+
+sub update_dbnow {
+    my $self = shift;
+
+    # no dbnow needed for SQLite
+    return if $self->SQLite();
+
+    my $result;
+    my $sth = $self->prepare_cached('SELECT now()');
+    if (!defined $sth or !$sth->execute($param)) {
+	$self->db_unavailable();
+	$self->log(1, "Error: couldn't get now() from DB: $DBI::errstr");
+	return; # we don't update the value
+    } else {
+	$self->db_available();
+	$result = $sth->fetchall_arrayref();
+	$self->{sqlgrey}{dbnow} = $self->quote($result->[0][0]);
     }
 }
 
@@ -751,9 +778,9 @@ sub is_in_from_awl {
 				    "WHERE sender_name = ? " .
 				    "AND sender_domain = ? " .
 				    "AND src = ? " .
-				    "AND last_seen > now() - " .
-				    $self->interval($self->{sqlgrey}{awl_age},
-						    "DAY")
+				    "AND last_seen > " .
+				    $self->past_tstamp($self->{sqlgrey}{awl_age},
+							  "DAY")
 				   );
     if (!defined $sth or !$sth->execute($sender_name, $sender_domain, $host)) {
 	$self->db_unavailable();
@@ -777,8 +804,8 @@ sub is_in_domain_awl {
     my $sth = $self->prepare_cached("SELECT 1 FROM $domain_awl " .
 				    "WHERE sender_domain = ? " .
 				    "AND src = ? " .
-				    "AND last_seen > now() - " .
-				    $self->interval($self->{sqlgrey}{awl_age},
+				    "AND last_seen > " .
+				    $self->past_tstamp($self->{sqlgrey}{awl_age},
 						    "DAY")
 				   );
     if (!defined $sth or !$sth->execute($sender_domain, $host)) {
@@ -880,8 +907,8 @@ sub cleanup_from_awl {
     my ($self) = @_;
 
     my $rows = $self->do("DELETE FROM $from_awl " .
-                	 "WHERE last_seen < now() - " .
-	                 $self->interval($self->{sqlgrey}{awl_age}, "DAY")
+                	 "WHERE last_seen < " .
+	                 $self->past_tstamp($self->{sqlgrey}{awl_age}, "DAY")
 	                );
 
     $rows = 0 if ($rows eq '0E0');
@@ -892,8 +919,8 @@ sub cleanup_domain_awl {
     my ($self) = @_;
 
     my $rows = $self->do("DELETE FROM $domain_awl " .
-	                 "WHERE last_seen < now() - " .
-	                 $self->interval($self->{sqlgrey}{awl_age}, "DAY")
+	                 "WHERE last_seen < " .
+	                 $self->past_tstamp($self->{sqlgrey}{awl_age}, "DAY")
 	                );
 
     $rows = 0 if ($rows eq '0E0');
@@ -950,11 +977,11 @@ sub in_connect {
     my $query = "SELECT 1 FROM $connect " .
             	"WHERE sender_name = ? AND sender_domain = ? " .
 	        "AND src = ? AND rcpt = ? " .
-		"AND first_seen BETWEEN now() - " .
-		$self->interval($self->{sqlgrey}{max_connect_age},
+		"AND first_seen BETWEEN " .
+		$self->past_tstamp($self->{sqlgrey}{max_connect_age},
 				"HOUR") .
-		" AND now() - " .
-		$self->interval($self->{sqlgrey}{reconnect_delay},
+		" AND " .
+		$self->past_tstamp($self->{sqlgrey}{reconnect_delay},
 				"MINUTE");
     my $sth = $self->prepare_cached($query);
     if (!defined $sth or !$sth->execute($sender_name, $sender_domain, $addr, $rcpt)) {
@@ -980,8 +1007,8 @@ sub recently_in_connect {
     my $query = "SELECT 1 FROM $connect WHERE sender_name = ? " .
 	        "AND sender_domain = ? " .
         	"AND src = ? AND rcpt = ? " .
-	        "AND first_seen >= now() - " .
-		$self->interval($self->{sqlgrey}{reconnect_delay},
+	        "AND first_seen >= " .
+		$self->past_tstamp($self->{sqlgrey}{reconnect_delay},
 				"MINUTE");
     my $sth = $self->prepare_cached($query);
     if (!defined $sth or !$sth->execute($sender_name, $sender_domain, $addr, $rcpt)) {
@@ -1073,8 +1100,8 @@ sub cleanup_connect {
         my $query = "SELECT sender_name, sender_domain, src, " .
                     "rcpt, first_seen " .
                     "FROM $connect " .
-                    "WHERE first_seen < now() - " .
-                    $self->interval($max_connect_age, "HOUR");
+                    "WHERE first_seen < " .
+                    $self->past_tstamp($max_connect_age, "HOUR");
         my $sth = $self->prepare_cached($query);
         if (defined $sth and $sth->execute()) {
 	    $self->db_available();
@@ -1090,8 +1117,8 @@ sub cleanup_connect {
         }
     }
     my $rows = $self->do("DELETE FROM $connect " .
-	                 "WHERE first_seen < now() - " .
-	                 $self->interval($max_connect_age, "HOUR")
+	                 "WHERE first_seen < " .
+	                 $self->past_tstamp($max_connect_age, "HOUR")
 	                );
 
    # DBI returns 0E0 if no rows is affected.
@@ -1254,7 +1281,6 @@ sub got_reload_request {
 
 sub update_static_whitelists {
     my $self = shift;
-    $self->log(1,"reloading static whitelists");
     $self->read_static_ip_whitelist();
     $self->read_dyn_fqdn_whitelist();
 }
@@ -1480,6 +1506,7 @@ sub smtpd_access_policy($$)
     # We can't process this signal as soon as we receive it as
     # we may be using variables for which it will trigger an update
     if ($self->got_reload_request()) {
+	$self->log(1,"reloading static whitelists and smart regexps");
 	$self->update_static_whitelists();
 	$self->init_smart_regexps();
     }
@@ -1493,7 +1520,10 @@ sub smtpd_access_policy($$)
 	    : 'dunno';
     }
 
+    # this is the identifier we use in AWLs
     my $cltid = $self->client_identifier($addr, $fqdn);
+    # we need the value of now() in the database
+    $self->update_dbnow();
     # domain scale awl check
     if ($self->is_in_domain_awl($sender_domain, $cltid)) {
 	$self->log(3, "domain_awl-match: updating $sender_domain, $cltid");
