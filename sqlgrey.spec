@@ -1,6 +1,6 @@
 %define name sqlgrey
 %define ver  1.1.2
-%define rel  1
+%define rel  3
 
 Summary:   SQLgrey is a postfix grey-listing policy service.
 Name:      %{name}
@@ -39,11 +39,20 @@ make clean
 %files -f ../file.list.sqlgrey
 %doc sqlgrey_client_access README HOWTO
 
+%pre
+if [ `getent passwd sqlgrey | wc -l` = 0 ]; then
+        /usr/sbin/useradd -d /var/sqlgrey sqlgrey
+fi
+
 %post
 if ! /usr/bin/id sqlgrey >/dev/null 2>/dev/null; then /usr/sbin/adduser -m -k /dev/null sqlgrey; fi
 
 %postun
-/usr/sbin/userdel sqlgrey
+if [ $1 = 0 ]; then
+   if [ `getent passwd sqlgrey | wc -l` = 1 ]; then
+      /usr/sbin/userdel sqlgrey
+   fi
+fi
 
 %changelog
 * Wed Sep 22 2004 Lionel Bouton <lionel-dev@bouton.name>

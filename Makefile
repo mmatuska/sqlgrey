@@ -15,7 +15,7 @@ clean:
 
 install: all
 	$(INSTALL) -d -m 755 $(BINDIR)
-	$(INSTALL) -d -m 755 $(SYSCONFDIR)
+	$(INSTALL) -d -m 755 $(ETCDIR)
 	$(INSTALL) -d -m 755 $(INITDIR)
 	$(INSTALL) -d -m 755 $(MANDIR)
 	$(INSTALL) sqlgrey $(BINDIR)
