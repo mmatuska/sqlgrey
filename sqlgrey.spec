@@ -1,5 +1,5 @@
 %define name sqlgrey
-%define ver  1.3.4
+%define ver  1.3.5
 %define rel  1
 
 Summary:   SQLgrey is a postfix grey-listing policy service.
@@ -40,6 +40,7 @@ make clean
 /usr/share/man/man1/sqlgrey.1.gz
 %config(noreplace) /etc/sqlgrey/sqlgrey.conf
 /etc/sqlgrey/clients_ip_whitelist
+/etc/sqlgrey/clients_fqdn_whitelist
 %doc README HOWTO Changelog FAQ TODO
 
 %pre

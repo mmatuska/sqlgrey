@@ -11,7 +11,7 @@ TBZ2 = sqlgrey-$(VERSION).tar.bz2
 all: manpage sqlgrey-recreate sqlgrey.spec-recreate
 
 sqlgrey-recreate:
-	cat sqlgrey | sed 's/^my $$VERSION = .*;/my $$VERSION = $(VERSION);/' > sqlgrey.new
+	cat sqlgrey | sed 's/^my $$VERSION = .*;/my $$VERSION = "$(VERSION)";/' > sqlgrey.new
 	mv sqlgrey.new sqlgrey
 	chmod a+x sqlgrey
 
@@ -35,6 +35,7 @@ install: all
 	$(INSTALL) sqlgrey $(BINDIR)
 	$(INSTALL) etc/sqlgrey.conf $(CONFDIR)
 	$(INSTALL) etc/clients_ip_whitelist $(CONFDIR)
+	$(INSTALL) etc/clients_fqdn_whitelist $(CONFDIR)
 	$(INSTALL) sqlgrey.1 $(MANDIR)
 
 rh-install: install

@@ -33,7 +33,8 @@ use DBI;
 use vars qw(@ISA);
 @ISA = qw(Net::Server::Multiplex);
 
-my $VERSION = 1.3.4;
+my $VERSION = "1.3.5";
+my $software = 'SQLgrey-' . "$VERSION";
 
 my $DB_VERSION = 1;
 
@@ -49,7 +50,7 @@ $dflt{verbose}            = 0;
 $dflt{user}               = 'sqlgrey';
 $dflt{inet}               = '2501';
 $dflt{pidfile}            = '/var/run/sqlgrey.pid';
-$dflt{reconnect_delay}    = 5;            # 5 minutes
+$dflt{reconnect_delay}    = 1;            # 1 minute
 $dflt{max_connect_age}    = 24;           # 24 hours
 $dflt{awl_age}            = 60;           # 60 days
 $dflt{group_domain_level} = 2;            # 2 e-mail addr from same domain/IP
@@ -58,6 +59,7 @@ $dflt{db_name}            = 'sqlgrey';
 $dflt{db_host}            = 'localhost';
 $dflt{db_user}            = 'sqlgrey';
 $dflt{db_pass}            = '';
+$dflt{prepend}            = 1;
 
 # Default configuration file
 my $config_file           = '/etc/sqlgrey/sqlgrey.conf';
@@ -67,12 +69,14 @@ my $dyn_ip_whitelist_file = '/etc/sqlgrey/clients_ip_whitelist.local';
 my $stat_fqdn_whitelist_file = '/etc/sqlgrey/clients_fqdn_whitelist';
 my $dyn_fqdn_whitelist_file = '/etc/sqlgrey/clients_fqdn_whitelist.local';
 
+my $prepend = 'PREPEND X-Greylist: ';
+
 ##########################
 ## Database helper subs ##
 ##########################
 
 # fault (lost connection) tolerant do
-# should allow a RDBMs restart without crash
+# allows a RDBMs restart without crash
 sub do {
     my $self = shift;
     my $query = shift;
@@ -94,6 +98,7 @@ sub do {
     }
 }
 
+# prepare_cached needs to check for a dbh
 sub prepare_cached {
     my $self = shift;
     my $query = shift;
@@ -108,6 +113,9 @@ sub prepare_cached {
     }
 }
 
+# quote can't be called directly when dbh is undef
+# we provide a wrapper
+# we don't try to reconnect here
 sub quote {
     my $self = shift;
     my $toquote = shift;
@@ -204,6 +212,9 @@ sub getconfig {
     }
 }
 
+# Database configuration related, only used for checking
+# schema version now, might be used to check compatibility
+# between database schema and SQLgrey startup switches in the future
 sub setconfig {
     my $self = shift;
     my $param = shift;
@@ -697,10 +708,6 @@ sub read_static_ip_whitelist {
 	$self->read_an_ip_whitelist($stat_ip_whitelist_file);
 }
 
-sub read_static_fqdn_whitelist {
-    # TODO
-}
-
 sub read_dyn_ip_whitelist {
     my $self = shift;
     $self->{sqlgrey}{dyn_ip_whitelist} =
@@ -715,7 +722,7 @@ sub read_an_ip_whitelist {
     $whitelist->{IP} = {};
     $whitelist->{C} = {};
     if (! open (FILE, '<' . $file)) {
-	$self->log(2, "Warning: no $file");
+	$self->log(2, "Warning: $file not found or unreadable");
 	return $whitelist;
     }
     while (<FILE>) {
@@ -740,8 +747,56 @@ sub read_an_ip_whitelist {
     return $whitelist;
 }
 
+sub read_static_fqdn_whitelist {
+    my $self = shift;
+    $self->{sqlgrey}{stat_fqdn_whitelist} =
+	$self->read_an_fqdn_whitelist($stat_fqdn_whitelist_file);
+}
+
 sub read_dyn_fqdn_whitelist {
-    # TODO
+    my $self = shift;
+    $self->{sqlgrey}{dyn_fqdn_whitelist} =
+	$self->read_an_fqdn_whitelist($dyn_fqdn_whitelist_file);
+}
+
+sub read_an_fqdn_whitelist {
+    my $self = shift;
+    my $file = shift;
+
+    # Prepare empty whitelists
+    my $whitelist;
+    my @re_whitelist;
+    my @domain_whitelist;
+    my $system_whitelist;
+
+    if (! open (FILE, '<' . $file)) {
+	$self->log(2, "Warning: $file not found or readable");
+	$whitelist->{system} = $system_whitelist;
+	$whitelist->{domain} = \@domain_whitelist;
+	$whitelist->{regexp} = \@re_whitelist;
+	return $whitelist;
+    }
+    while (<FILE>) {
+	chomp;
+	# strip comments and whitespaces
+	s/#.*//; s/\s+//;
+	# Anything left ?
+	next unless length;
+	if (/\/(\S+)\/$/) { # regexp
+	    push @re_whitelist, $1;
+	} elsif (/^\*\.(.*$)/) { # whole domain
+	    push @domain_whitelist, $1;
+	} elsif (/^([\w-]+\.)+[\w-]+$/) { # looks like a system name
+	    $system_whitelist->{$_} = 1;
+	} else {
+	    $self->log(2, "Unrecognised line in $file: $_");
+	}
+    }
+    close FILE;
+    $whitelist->{system} = $system_whitelist;
+    $whitelist->{domain} = \@domain_whitelist;
+    $whitelist->{regexp} = \@re_whitelist;
+    return $whitelist;
 }
 
 sub update_dyn_whitelists {
@@ -772,7 +827,13 @@ sub update_dyn_ip_whitelist {
 }
 
 sub update_dyn_fqdn_whitelist {
-    # TODO
+    my $self = shift;
+    my $dyntime = get_mtime($dyn_fqdn_whitelist_file);
+    if ($dyntime > $self->{sqlgrey}{dynfqdntime}) {
+	$self->log(2,"reloading $dyn_fqdn_whitelist_file");
+	$self->{sqlgrey}{dynfqdntime} = $dyntime;
+	$self->read_dyn_fqdn_whitelist();
+    }
 }
 
 sub is_in_whitelists {
@@ -790,8 +851,9 @@ sub is_in_ip_whitelists {
 }
 
 sub is_in_fqdn_whitelists {
-    # TODO
-    return 0;
+    my ($self, $fqdn) = @_;
+    return ($self->is_in_static_fqdn_whitelist($fqdn)
+	or $self->is_in_dyn_fqdn_whitelist($fqdn));
 }
 
 sub is_in_static_ip_whitelist {
@@ -808,6 +870,40 @@ sub is_in_dyn_ip_whitelist {
 
     return (defined $self->{sqlgrey}{dyn_ip_whitelist}->{IP}{$ip}
 	or defined $self->{sqlgrey}{dyn_ip_whitelist}->{C}{$c_net});
+}
+
+sub is_in_static_fqdn_whitelist {
+    my ($self, $fqdn) = @_;
+    return is_in_fqdn_whitelist($fqdn,
+				$self->{sqlgrey}{stat_fqdn_whitelist});
+}
+
+sub is_in_dyn_fqdn_whitelist {
+    my ($self, $fqdn) = @_;
+    return is_in_fqdn_whitelist($fqdn,
+				$self->{sqlgrey}{dyn_fqdn_whitelist});
+}
+
+sub is_in_fqdn_whitelist {
+    my ($fqdn, $whitelist) = @_;
+    # check hostnames
+    if (defined $whitelist->{system}->{$fqdn}) {
+	return 1;
+    }
+    # check domains
+    foreach my $domain (@{$whitelist->{domain}}) {
+	if ($fqdn =~ /\.$domain$/) {
+	    return 1;
+	}
+    }
+    # check regexps
+    foreach my $regexp (@{$whitelist->{regexp}}) {
+	if ($fqdn =~ /$regexp/) {
+	    return 1;
+	}
+    }
+    # Nothing matches
+    return 0;
 }
 
 ############
@@ -993,14 +1089,18 @@ sub smtpd_access_policy($$)
     if ($self->is_in_whitelists($sender_name, $sender_domain,
 			       $addr, $fqdn, $recipient)) {
 	$self->log(3, "whitelist: $sender_name\@$sender_domain, $addr($fqdn) $recipient");
-        return 'dunno';
+        return $self->{sqlgrey}{prepend} ?
+	    $prepend . 'whitelisted by ' . $software
+	    : 'dunno';
     }
     # domain scale awl check
     if ($self->is_in_domain_awl($sender_domain, $addr)) {
 	$self->log(3, "domain_awl-match: updating $sender_domain, $addr");
 	# update awl entry
 	$self->update_domain_awl($sender_domain, $addr);
-	return 'dunno';
+	return $self->{sqlgrey}{prepend} ?
+	    $prepend . 'domain auto-whitelisted by ' . $software
+	    : 'dunno';
     }
     # address scale awl check
     if ($self->is_in_from_awl($sender_name, $sender_domain, $addr)) {
@@ -1008,7 +1108,9 @@ sub smtpd_access_policy($$)
 		      "$sender_name\@$sender_domain");
 	# update awl entry
 	$self->update_from_awl($sender_name, $sender_domain, $addr);
-	return 'dunno';
+	return $self->{sqlgrey}{prepend} ?
+	    $prepend . 'from auto-whitelisted by ' . $software
+	    : 'dunno';
     }
     # is it an early reconnect ?
     if ($self->recently_in_connect($sender_name, $sender_domain,
@@ -1020,21 +1122,21 @@ sub smtpd_access_policy($$)
     }
     # is it a reconnection ?
     if ($self->in_connect($sender_name, $sender_domain, $addr, $recipient)) {
+	my $delay = $self->get_reconnect_delay($sender_name, $sender_domain,
+					       $addr, $recipient);
         $self->log(2, "$addr: $sender_name" . "\@" . $sender_domain .
-		      " -> $recipient: reconnect ok, adding to AWL");
-	$self->log(3, "$addr: $sender_name" . "\@" . $sender_domain .
-		      " -> $recipient: reconnect delay: " .
-		      $self->get_reconnect_delay($sender_name, $sender_domain,
-						 $addr, $recipient)
-		  );
+		      " -> $recipient: reconnect($delay) ok, adding to AWL");
 	# check if we have others from the same domain in the from_awl
 	# add 1 for our sample and compare to the aggregation level
-	if (($self->{sqlgrey}{domain_level} != 0) and
+	if (
+	    ($self->{sqlgrey}{domain_level} != 0)
+	    and
 	    ($self->count_from_awl($sender_domain, $addr)+1 >=
 	     $self->{sqlgrey}{domain_level})
 	   ) {
 	    # use domain-level AWL
-	    $self->move_domain_from_mail_to_domain_awl($sender_domain, $addr);
+	    $self->move_domain_from_mail_to_domain_awl($sender_domain,
+						       $addr);
 	    $self->log(2, "$addr,$sender_domain reached " .
 		           $self->{sqlgrey}{domain_level} .
 		           ", using domain-level AWL now");
@@ -1044,8 +1146,10 @@ sub smtpd_access_policy($$)
 		          "$addr added to mail-level AWL");
 	    $self->put_in_from_awl($sender_name, $sender_domain, $addr);
 	}
-	$self->delete_mail_ip_from_connect($sender_name, $sender_domain, $addr);
-	return 'dunno';
+	$self->delete_mail_ip_from_connect($sender_name, $sender_domain,
+					   $addr);
+	return $self->{sqlgrey}{prepend} ?
+	    $prepend . "delayed $delay by $software" : 'dunno';
     }
     # new connection
     $self->log(2, "new: $addr: $sender_name\@$sender_domain -> $recipient");
@@ -1094,22 +1198,15 @@ sub main()
         'daemonize|d', 'inet|i=s', 'user|u=s', 'pidfile|p=s',
         'reconnect-delay|r=i', 'max-connect-age|m=i', 'awl-age|a=i',
         'group-domain-level|g=i', 'db-type=s', 'db-name=s', 'db-host=s',
-	'db-user=s', 'db-pass=s', 'kill|k')
+	'db-user=s', 'db-pass=s', 'kill|k', 'prepend=i')
 	or exit(1);
+
     if ($opt{help})    { pod2usage(1) }
     if ($opt{man})     { pod2usage(-exitstatus => 0, -verbose => 2) }
     if ($opt{version}) { print "sqlgrey $VERSION\n"; exit(0) }
 
     # Read the config file
     read_conffile($opt{configfile});
-
-    # Reparse options to override file defaults
-    @ARGV = @ARGV_saved;
-    GetOptions(\%opt, 'help|h', 'man', 'version', 'configfile|f=s', 'verbose|v',
-        'daemonize|d', 'inet|i=s', 'user|u=s', 'pidfile|p=s',
-        'reconnect-delay|r=i', 'max-connect-age|m=i', 'awl-age|a=i',
-        'group-domain-level|g=i', 'db-type=s', 'db-name=s', 'db-host=s',
-	'db-user=s', 'db-pass=s', 'kill|k');
 
     # Are we on a killing spray ?
     if (defined $opt{kill}) {
@@ -1162,12 +1259,13 @@ sub main()
 		                   || $dflt{group_domain_level},
             last_maint      => time,
 	    maint_delay     => 0, # How often do we clean tables (seconds)
- 	    # TODO move into conf
+
             db_type         => $opt{'db-type'} || $dflt{db_type},
             db_name         => $opt{'db-name'} || $dflt{db_name},
             db_host         => $opt{'db-host'} || $dflt{db_host},
 	    db_user         => $opt{'db-user'} || $dflt{db_user},
             db_pass         => $opt{'db-pass'} || $dflt{db_pass},
+	    prepend         => $opt{prepend} || $dflt{prepend},
         },
     }, 'sqlgrey';
 
@@ -1281,7 +1379,7 @@ B<sqlgrey> [I<options>...]
                             (default: /var/run/sqlgrey.pid)
  -u, --user=USER            run as USER (default: sqlgrey)
  -r, --reconnect-delay=N    greylist (refuse mail) for N minutes after
-                            first connection (default: 5)
+                            first connection (default: 1)
  -m, --max-connect-age=N    mail transfer attempt is forgotten N hours
                             after (default: 24)
      --db-type=TYPE         DBD driver to use (mysql, Pg and SQLite are
@@ -1290,6 +1388,7 @@ B<sqlgrey> [I<options>...]
      --db-name=NAME         default: sqlgrey
      --db-user=USER         default: sqlgrey
      --db-pass=PASS         default: '' (empty password)
+     --prepend=[1|0]        default: 1 (add X-Greylist: headers)
  -k, --kill                 kill a running sqlgrey
                             (identified by 'pidfile' content)
  -f, --configfile=FILE      read config from FILE (default /etc/sqlgrey.conf)
