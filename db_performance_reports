@@ -27,3 +27,12 @@ With indicies   : 16ms (explain shows that the index on ip_addr is used)
 I wonder why the first_seen index was not used.  I did run analyze on the
 table to make sure statistics were up to date.  Regardless, it does look
 like the index on ip_addr is worthwhile.
+
+Rene Joergensen reports:
+
+1.2 million mails a day
+DB: mysql on Dual 2.6GHz Xeon with 1GB RAM and 2 SCSI-disks
+at 7000 rows in connect : 80-90% CPU used by mysqld
+after adding an index on connect.ip_addr CPU usage drops to 2%
+SELECT from connect statements drop from a few hundreth of a second to
+non-measurable values
