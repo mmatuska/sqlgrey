@@ -39,7 +39,7 @@ with mysql:
 > GRANT ALL ON sqlgrey.* TO sqlgrey@localhost;
 
 Setup /etc/sqlgrey/sqlgrey.conf with
-db_type = MySQL
+db_type = mysql
 db_name = sqlgrey
 
 # Note :
