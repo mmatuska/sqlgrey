@@ -12,13 +12,14 @@
 1.5.x
 - use time units everywhere to make configuration easier
 - experiment with SPF support
-- consider optin/optout (is it easy to do with Postfix? Then provide an HOWTO
-  else code it in SQLgrey)
-- support migrating from another greylister by calling it to learn its auto-whitelists
+- switch from log level to log categories
 - external cleanup process/experiment with an adaptative cleanup algorithm
 - check if permission related SQL errors are catchable
 - try to exit with a proper error code when database is unavailable or the user doesn't
   have enough rights to access the pid-file
+- consider optin/optout (is it easy to do with Postfix? Then provide an HOWTO
+  else code it in SQLgrey)
+- support migrating from another greylister by calling it to learn its auto-whitelists
     
 As soon as available...
 - gather enough perf data to decide on indices to add

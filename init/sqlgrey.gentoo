@@ -5,6 +5,8 @@
 depend() {
 	use logger
 	before mta
+	# pg_autovacuum waits for a fully started PostgreSQL
+	after pg_autovacuum postgresql mysql
 }
 
 start() {

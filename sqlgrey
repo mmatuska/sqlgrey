@@ -33,7 +33,7 @@ use DBI;
 use vars qw(@ISA);
 @ISA = qw(Net::Server::Multiplex);
 
-my $VERSION = "1.4.1";
+my $VERSION = "1.4.2";
 my $software = 'SQLgrey-' . "$VERSION";
 
 my $DB_VERSION = 1;
@@ -186,7 +186,7 @@ sub database_setup {
 	$wasfull = 0; } else { $wasempty = 0, }
 
     if ($self->currentdbversion($wasempty) < $DB_VERSION) {
-	$self->log(2, "Upgrading database from " .
+	$self->log(1, "Upgrading database from " .
 		   $self->currentdbversion($wasempty) . " to " .
 		   $DB_VERSION);
 	$self->upgradedb();
@@ -303,13 +303,13 @@ sub upgrade() {
 sub upgrade0() {
     my $self = shift;
     my $db_type = $self->{sqlgrey}{db_type};
-    $self->log(2, "Upgrading database schema from version 0 to version 1");
+    $self->log(1, "Upgrading database schema from version 0 to version 1");
     if ($db_type ne "SQLite") {
 	# 0 -> 1 : char to varchar
 	# rename current table and dump content into new ones
 
 	# connect
-	$self->log(2, "CHAR -> VARCHAR in $connect table");
+	$self->log(1, "CHAR -> VARCHAR in $connect table");
 	$self->do("ALTER TABLE $connect RENAME TO $connect" . "old");
 	$self->create_connect_table();
 	$self->do("INSERT INTO $connect (sender_name, sender_domain, " .
@@ -320,7 +320,7 @@ sub upgrade0() {
 	$self->do("DROP TABLE $connect" . "old");
 
 	# from_awl
-	$self->log(2, "CHAR -> VARCHAR in $from_awl table");
+	$self->log(1, "CHAR -> VARCHAR in $from_awl table");
 	$self->do("ALTER TABLE $from_awl RENAME TO $from_awl" . "old");
 	if ($db_type eq 'Pg') {
 	    # we need to remove the pkey constraint
@@ -335,7 +335,7 @@ sub upgrade0() {
 	$self->do("DROP TABLE $from_awl" . "old");
 
 	# domain_awl
-	$self->log(2, "CHAR -> VARCHAR in $domain_awl table");
+	$self->log(1, "CHAR -> VARCHAR in $domain_awl table");
 	$self->do("ALTER TABLE $domain_awl RENAME TO $domain_awl" . "old");
 	if ($db_type eq 'Pg') {
 	    # we need to remove the pkey constraint
@@ -351,12 +351,12 @@ sub upgrade0() {
 
 	# net_whitelist not needed anymore
 	if ($self->table_exists("net_whitelist")) {
-	    $self->log(2, "net_whitelist not supported anymore, " .
+	    $self->log(1, "net_whitelist not supported anymore, " .
 		       "see /etc/sqlgrey/clients_*_whitelist");
 	    $self->do("DROP TABLE net_whitelist");
 	}
     } else {
-	$self->log(2, "SQLite treats VARCHAR and CHAR the same, " .
+	$self->log(1, "SQLite treats VARCHAR and CHAR the same, " .
 		   "no upgrade needed");
     }
     $self->create_config_table();
@@ -664,19 +664,25 @@ sub count_from_awl {
 sub cleanup_from_awl {
     my ($self) = @_;
 
-    $self->do("DELETE FROM $from_awl " .
-	      "WHERE last_seen < now() - " .
-	      $self->interval($self->{sqlgrey}{awl_age}, "DAY")
-	     );
+    my $rows = $self->do("DELETE FROM $from_awl " .
+                	 "WHERE last_seen < now() - " .
+	                 $self->interval($self->{sqlgrey}{awl_age}, "DAY")
+	                );
+
+    $rows = 0 if ($rows eq '0E0');
+    return $rows ? $rows : 0;
 }
 
 sub cleanup_domain_awl {
     my ($self) = @_;
 
-    $self->do("DELETE FROM $domain_awl " .
-	      "WHERE last_seen < now() - " .
-	      $self->interval($self->{sqlgrey}{awl_age}, "DAY")
-	     );
+    my $rows = $self->do("DELETE FROM $domain_awl " .
+	                 "WHERE last_seen < now() - " .
+	                 $self->interval($self->{sqlgrey}{awl_age}, "DAY")
+	                );
+
+    $rows = 0 if ($rows eq '0E0');
+    return $rows ? $rows : 0;
 }
 
 sub delete_domain_from_mail_awl {
@@ -818,36 +824,46 @@ sub cleanup_connect {
     my $self = shift;
     my $max_connect_age = $self->{sqlgrey}{max_connect_age};
 
-    # Print probable SPAM:
-    my $query = "SELECT sender_name, sender_domain, ip_addr, " .
-        	"rcpt, first_seen " .
-		"FROM $connect " .
-	        "WHERE first_seen < now() - " .
-		$self->interval($max_connect_age, "HOUR");
-    my $sth = $self->prepare_cached($query);
-    if (defined $sth and $sth->execute()) {
-	my $result = $sth->fetchall_arrayref();
-	for my $spam (@{$result}) {
-	    $self->log(2, "Probable spam: $$spam[2]: " .
-		       "$$spam[0]\@$$spam[1] -> " .
-		       "$$spam[3] at $$spam[4]");
-	}
-    } else {
-	$self->log(1, "Error: couldn't list detected spam attempts");
-	$self->connectdb();
+    if ($self->{server}{log_level} >= 2) {
+        # Print probable SPAM:
+        my $query = "SELECT sender_name, sender_domain, ip_addr, " .
+                    "rcpt, first_seen " .
+                    "FROM $connect " .
+                    "WHERE first_seen < now() - " .
+                    $self->interval($max_connect_age, "HOUR");
+        my $sth = $self->prepare_cached($query);
+        if (defined $sth and $sth->execute()) {
+	    my $result = $sth->fetchall_arrayref();
+	    for my $spam (@{$result}) {
+	        $self->log(2, "Probable spam: $$spam[2]: " .
+	   	           "$$spam[0]\@$$spam[1] -> " .
+		           "$$spam[3] at $$spam[4]");
+	    }
+        } else {
+	    $self->log(1, "Error: couldn't list detected spam attempts");
+	    $self->connectdb();
+        }
     }
-    $self->do("DELETE FROM $connect " .
-	      "WHERE first_seen < now() - " .
-	      $self->interval($max_connect_age, "HOUR")
-	     );
+    my $rows = $self->do("DELETE FROM $connect " .
+	                 "WHERE first_seen < now() - " .
+	                 $self->interval($max_connect_age, "HOUR")
+	                );
+
+   # DBI returns 0E0 if no rows is affected.
+   $rows = 0 if ($rows eq '0E0');
+
+   return $rows ? $rows : 0;
 }
 
 ## General cleanup
 sub cleanup {
     my ($self) = @_;
-    $self->cleanup_from_awl();
-    $self->cleanup_domain_awl();
-    $self->cleanup_connect();
+    my $time = time();
+    my $frows = $self->cleanup_from_awl();
+    my $drows = $self->cleanup_domain_awl();
+    my $crows = $self->cleanup_connect();
+    $time = time() - $time;
+    $self->log(2, 'Spent ' . $time . "s cleaning: from_awl ($frows) domain_awl ($drows) connect ($crows)");
 }
 
 ##################
@@ -895,7 +911,7 @@ sub read_an_ip_whitelist {
     $whitelist->{IP} = {};
     $whitelist->{C} = {};
     if (! open (FILE, '<' . $file)) {
-	$self->log(2, "Warning: $file not found or unreadable");
+	$self->log(1, "Warning: $file not found or unreadable");
 	return $whitelist;
     }
     while (<FILE>) {
@@ -943,7 +959,7 @@ sub read_an_fqdn_whitelist {
     my $system_whitelist;
 
     if (! open (FILE, '<' . $file)) {
-	$self->log(2, "Warning: $file not found or readable");
+	$self->log(1, "Warning: $file not found or readable");
 	$whitelist->{system} = $system_whitelist;
 	$whitelist->{domain} = \@domain_whitelist;
 	$whitelist->{regexp} = \@re_whitelist;
@@ -993,7 +1009,7 @@ sub got_reload_request {
 
 sub update_static_whitelists {
     my $self = shift;
-    $self->log(2,"reloading static whitelists");
+    $self->log(1,"reloading static whitelists");
     $self->read_static_ip_whitelist();
     $self->read_dyn_fqdn_whitelist();
 }
@@ -1013,7 +1029,7 @@ sub update_dyn_ip_whitelist {
     my $self = shift;
     my $dyntime = get_mtime($dyn_ip_whitelist_file);
     if ($dyntime > $self->{sqlgrey}{dyniptime}) {
-	$self->log(2,"reloading $dyn_ip_whitelist_file");
+	$self->log(1,"reloading $dyn_ip_whitelist_file");
 	$self->{sqlgrey}{dyniptime} = $dyntime;
 	$self->read_dyn_ip_whitelist();
     }
@@ -1023,7 +1039,7 @@ sub update_dyn_fqdn_whitelist {
     my $self = shift;
     my $dyntime = get_mtime($dyn_fqdn_whitelist_file);
     if ($dyntime > $self->{sqlgrey}{dynfqdntime}) {
-	$self->log(2,"reloading $dyn_fqdn_whitelist_file");
+	$self->log(1,"reloading $dyn_fqdn_whitelist_file");
 	$self->{sqlgrey}{dynfqdntime} = $dyntime;
 	$self->read_dyn_fqdn_whitelist();
     }
@@ -1331,7 +1347,7 @@ sub main()
             syslog_facility => 'mail',
             syslog_logsock  => 'unix',
             syslog_ident    => 'sqlgrey',
-	    syslog_logopt   => '',
+	    syslog_logopt   => 'cons',
         },
         sqlgrey => {
 	    # min time before reconnect (min)

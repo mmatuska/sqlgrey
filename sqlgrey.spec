@@ -1,5 +1,5 @@
 %define name sqlgrey
-%define ver  1.4.1
+%define ver  1.4.2
 %define rel  1
 
 Summary:   SQLgrey is a postfix grey-listing policy service.
@@ -38,19 +38,22 @@ make clean
 /etc/init.d/sqlgrey
 /usr/sbin/sqlgrey
 /usr/share/man/man1/sqlgrey.1.gz
+%doc README HOWTO Changelog FAQ TODO
 %defattr(644,root,root)
 %config(noreplace) /etc/sqlgrey/sqlgrey.conf
 /etc/sqlgrey/clients_ip_whitelist
 /etc/sqlgrey/clients_fqdn_whitelist
-%doc README HOWTO Changelog FAQ TODO
 
 %pre
-if [ `getent group sqlgrey | wc -l` = 0 ]; then
-        /usr/sbin/groupadd sqlgrey
-fi
-if [ `getent passwd sqlgrey | wc -l` = 0 ]; then
-        /usr/sbin/useradd -g sqlgrey -d /var/sqlgrey sqlgrey
-fi
+getent group sqlgrey > /dev/null || /usr/sbin/groupadd sqlgrey
+#if [ `getent group sqlgrey | wc -l` = 0 ]; then
+#        /usr/sbin/groupadd sqlgrey
+#fi
+getent passwd sqlgrey > /dev/null || /usr/sbin/useradd -g sqlgrey \
+     -d /var/sqlgrey sqlgrey
+#if [ `getent passwd sqlgrey | wc -l` = 0 ]; then
+#        /usr/sbin/useradd -g sqlgrey -d /var/sqlgrey sqlgrey
+#fi
 
 %postun
 if [ $1 = 0 ]; then
@@ -63,9 +66,18 @@ if [ $1 = 0 ]; then
 fi
 
 %changelog
-* Mon Dec 13 2004 Lionel Bouton <lionel-dev@bouton.name>
+* Thu Jan 13 2005 Lionel Bouton <lionel-dev@bouton.name>
+ - 1.4.2 release
+ - Better cleanup logging from Rene Joergensen
+ - Fix for Syslog.pm error messages at init time
+ - Fix doc packaging in RPM
+
+* Tue Jan 11 2005 Lionel Bouton <lionel-dev@bouton.name>
  - 1.4.1 release
  - fix for invalid group id messages from Øystein Viggen
+ - allow reloading whitelists with SIGUSR1
+ - db_maintdelay user-configurable
+ - don't log pid anymore
 
 * Fri Dec 10 2004 Lionel Bouton <lionel-dev@bouton.name>
  - 1.4.0 release
