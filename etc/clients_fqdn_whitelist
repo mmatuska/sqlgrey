@@ -16,7 +16,7 @@
 
 # No retry
 *.southwest.com
-scd.yahoo.com
+*.scd.yahoo.com
 *.ameritradeinfo.com
 *.amazon.com
 
