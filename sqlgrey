@@ -177,7 +177,6 @@ sub initdb {
     # to reinit the connection, but better use mysql DBD code
     if ($self->{sqlgrey}{db_type} eq "mysql") {
         $self->{sqlgrey}{dbh}->{mysql_auto_reconnect} = 1;
-        print $self->{sqlgrey}{dbh}->{'serverinfo'};
     }
     # Create now function for SQLite
     if ($self->{sqlgrey}{db_type} eq "SQLite") {
@@ -745,8 +744,13 @@ sub read_conffile
 	$config_file = $optional_file;
     }
     # Check if conf file is readable if explicitly told to use one
-    open(CONF, '<' . $config_file)
-	or die "Couldn't open $config_file for reading: $!\n" if (defined $optional_file) or return;
+    if (defined $optional_file) {
+	open(CONF, '<' . $config_file)
+	    or die "Couldn't open $config_file for reading: $!\n";
+    } else {
+	open(CONF, '<' . $config_file)
+	    or return;
+    }
 
     while (<CONF>) {
         chomp;          # no newline
@@ -754,7 +758,7 @@ sub read_conffile
         s/^\s+//;       # no leading white
         s/\s+$//;       # no trailing white
         next unless length;     # anything left ?
-        my ($var, $value) = split(/s*=\s*/, $_, 2);
+        my ($var, $value) = split(/\s*=\s*/, $_, 2);
         $dflt{$var} = $value;
     }
     close CONF
@@ -814,7 +818,7 @@ sub main()
     my $server = bless {
         server => {
             commandline     => [ $0, @ARGV_saved ],
-            port            => [ $opt{inet} ? $opt{inet} : $dflt{inet} ],
+            port            => [ $opt{inet} || $dflt{inet} ],
             proto           => 'tcp',
             user            => $opt{user} || $dflt{user},
             setsid          => $opt{daemonize} ? 1 : undef,
