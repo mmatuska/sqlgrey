@@ -266,11 +266,11 @@ sub past_tstamp {
 	my $delay;
 	# SQLite doesn't recognise INTERVAL
         if ($unit eq 'DAY') {
-            delay = $nb * 24 * 60 * 60;
+            $delay = $nb * 24 * 60 * 60;
         } elsif ($unit eq 'HOUR') {
-            delay = $nb * 60 * 60;
+            $delay = $nb * 60 * 60;
         } elsif ($unit eq 'MINUTE') {
-            delay = $nb * 60;
+            $delay = $nb * 60;
         } else {
             # catch syntax errors
             $self->mydie('Interval error', 'interval(' . $nb . ', ' . $unit . ') for SQLite,'
@@ -291,7 +291,7 @@ sub update_dbnow {
 
     my $result;
     my $sth = $self->prepare_cached('SELECT now()');
-    if (!defined $sth or !$sth->execute($param)) {
+    if (!defined $sth or !$sth->execute()) {
 	$self->db_unavailable();
 	$self->log(1, "Error: couldn't get now() from DB: $DBI::errstr");
 	return; # we don't update the value
