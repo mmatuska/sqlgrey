@@ -1,5 +1,3 @@
-- don't use now() in WHERE clauses: hurts perf at least on PostgreSQL
-
 - bug with multiple connect entries matching a reconnection (only in multiple
   SQLgrey instances configs and in a rare race condition) to fix
   -> accept multiple connect entries in "in_connect(), recently_in_connect()"
