@@ -1,0 +1,57 @@
+# Reference : http://www.greylisting.org
+12.5.136.141    # Southwest Airlines (unique sender, no retry)
+12.5.136.142    # Southwest Airlines (unique sender, no retry)
+12.107.209.244	# kernel.org mailing lists (high traffic, unique sender per mail)
+12.107.209.250  # sourceware.org mailing lists (high traffic, unique sender per mail)
+63.82.37.110	# SLmail
+64.7.153.18     # sentex.ca (common pool)
+64.12.137       # AOL (common pool) - http://postmaster.aol.com/servers/imo.html
+64.12.138       # AOL (common pool)
+64.124.204.39	# moveon.org (unique sender per attempt)
+64.125.132.254  # collab.net (unique sender per attempt)
+#64.233.170	# gmail (common server pool)
+#65.82.241.160	# Groupwise?
+#66.94.237	# Yahoo Groups?
+66.100.210.82	# Groupwise?
+66.135.209      # Ebay (for time critical alerts)
+66.135.197      # Ebay (common pool)
+66.162.216.166	# Groupwise?
+66.206.22.82	# PLEXOR
+66.206.22.83	# PLEXOR
+66.206.22.84	# PLEXOR
+66.206.22.85	# PLEXOR
+66.218.66       # Yahoo Groups servers (common pool, no retry)
+66.218.67       # Yahoo Groups servers (common pool, no retry)
+66.218.69       # Yahoo Groups servers (common pool, no retry)
+66.27.51.218	# ljbtc.com (Groupwise)
+#66.89.73.101	# Groupwise?
+#68.15.115.88	# Groupwise?
+152.163.225     # AOL (common pool)
+194.245.101.88	# Joker.com (email forwarding server)
+195.235.39.19	# Tid InfoMail Exchanger v2.20
+195.238.2.105   # skynet.be (wierd retry pattern)
+195.238.2.124   # skynet.be (common pool)
+195.238.3.12    # skynet.be (common pool)
+195.238.3.13    # skynet.be (common pool)
+#204.60.8.162	# Groupwise?
+204.107.120.10	# Ameritrade (no retry)
+205.188.139.136	# AOL (common pool)
+205.188.139.137	# AOL (common pool)
+205.188.144.207	# AOL (common pool)
+205.188.144.208	# AOL (common pool)
+205.188.156.66	# AOL (common pool)
+205.188.157	# AOL (common pool)
+205.188.159.7	# AOL (common pool)
+205.206.231	# SecurityFocus.com (unique sender per attempt)
+205.211.164.50	# sentex.ca (common pool)
+207.115.63	# Prodigy (broken software that retries continually with no delay)
+207.171.168	# Amazon.com (common pool)
+207.171.180	# Amazon.com (common pool)
+207.171.187	# Amazon.com (common pool)
+207.171.188	# Amazon.com (common pool)
+207.171.190	# Amazon.com (common pool)
+211.29.132	# optusnet.com.au (wierd retry pattern and more than 48hrs)
+213.136.52.31	# Mysql.com (unique sender)
+#216.136.226.0	# Yahoo Mail?
+#216.157.204.5	# Groupwise?
+217.158.50.178  # AXKit mailing list (unique sender per attempt)
