@@ -69,17 +69,21 @@ $dflt{greymethod}         = 'smart';
 $dflt{db_cleandelay}	  = 30 * 60;
 $dflt{admin_mail}         = '';
 
+my $CONF_DIR = '/etc/sqlgrey/';
 # Default configuration file
-my $config_file           = '/etc/sqlgrey/sqlgrey.conf';
+my $config_file              = $CONF_DIR . 'sqlgrey.conf';
 # whitelist files
-my $stat_ip_whitelist_file = '/etc/sqlgrey/clients_ip_whitelist';
-my $dyn_ip_whitelist_file = '/etc/sqlgrey/clients_ip_whitelist.local';
-my $stat_fqdn_whitelist_file = '/etc/sqlgrey/clients_fqdn_whitelist';
-my $dyn_fqdn_whitelist_file = '/etc/sqlgrey/clients_fqdn_whitelist.local';
+my $stat_ip_whitelist_file   = $CONF_DIR . 'clients_ip_whitelist';
+my $dyn_ip_whitelist_file    = $CONF_DIR . 'clients_ip_whitelist.local';
+my $stat_fqdn_whitelist_file = $CONF_DIR . 'clients_fqdn_whitelist';
+my $dyn_fqdn_whitelist_file  = $CONF_DIR . 'clients_fqdn_whitelist.local';
+# regexp files
+my $smtp_server_regexp_file  = $CONF_DIR . 'smtp_server.regexp';
+my $dyn_fqdn_regexp_file     = $CONF_DIR . 'dyn_fqdn.regexp';
 
 my $prepend = 'PREPEND X-Greylist: ';
 
-my $reload = 0; # used to signal a whitelists reload request
+my $reload = 0; # used to signal a regexps/whitelists reload request
 
 # Send mails
 sub sendmail {
@@ -682,12 +686,9 @@ sub deverp_user {
     # strip extension, used sometimes for mailing-list VERP
     $user =~ s/\+.*//;
     # strip hexadecimal sequences (doable in one regexp ?)
-    $user =~ s/([\._-])[0-9A-Fa-f]+([\._-])/$1#$2/g;
-    #$user =~ s/^[0-9A-Fa-f]+([\._-])/#$1/g;
-    $user =~ s/([\._-])[0-9A-Fa-f]+$/$1#/g;
-    # Simple VERP substitution : replace numbers with '#'
-    # will match VERP mailing-list message retransmissions
-    #$user =~ s/\b\d+\b/#/g;
+    # such a sequence starting the sender's name won't be stripped
+    $user =~ s/([._-])[0-9A-Fa-f]+([._-])/$1#$2/g;
+    $user =~ s/([._-])[0-9A-Fa-f]+$/$1#/g;
 
     return $user;
 }
@@ -1215,8 +1216,8 @@ sub read_an_fqdn_whitelist {
 	s/#.*//; s/\s+//;
 	# Anything left ?
 	next unless length;
-	if (/\/(\S+)\/$/) { # regexp
-	    push @re_whitelist, $1;
+	if (/\/(\S+)\/$/) { # regexp, we use qr//o to compile them here
+	    push @re_whitelist, qr/$1/o;
 	} elsif (/^\*\.(.*$)/) { # whole domain
 	    push @domain_whitelist, $1;
 	} elsif (/^([\w-]+\.)+[\w-]+$/) { # looks like a system name
@@ -1348,7 +1349,7 @@ sub is_in_fqdn_whitelist {
     }
     # check regexps
     foreach my $regexp (@{$whitelist->{regexp}}) {
-	if ($fqdn =~ /$regexp/) {
+	if ($fqdn =~ $regexp) {
 	    return 1;
 	}
     }
@@ -1356,7 +1357,54 @@ sub is_in_fqdn_whitelist {
     return 0;
 }
 
-## class-C based greylisting
+#################################
+## Regexps for smart algorithm ##
+#################################
+
+sub init_smart_regexps {
+    my $self = shift;
+    $self->read_smtp_server_regexp();
+    $self->read_dyn_fqdn_regexp();
+}
+
+sub read_a_regexp {
+    my $self = shift;
+    my $file = shift;
+
+    my $regexp;
+    if (! open (REGEXP, '<' . $file)) {
+	$self->log(1, "Warning: $file not found or unreadable");
+    }
+    # we expect only one line
+    my $count = 0;
+    while (<REGEXP>) {
+	chomp;
+	# compile the regexp
+	$regexp = qr/$_/io;
+	$count++;
+    }
+    close REGEXP;
+    if ($count > 1) {
+	$self->log(1, "Warning: more than one line in $file," .
+		   "took only last one");
+    }
+    return $regexp;
+}
+
+sub read_smtp_server_regexp {
+    my $self = shift;
+    $self->{sqlgrey}{smtp_server_re} =
+	$self->read_a_regexp($smtp_server_regexp_file);
+}
+
+sub read_dyn_fqdn_regexp {
+    my $self = shift;
+    $self->{sqlgrey}{dyn_fqdn_re} = qr/$_/o;
+	$self->read_a_regexp($dyn_fqdn_regexp_file);
+}
+
+## client_identifier can be its IP-address or the class-C network
+## we decide here
 sub client_identifier {
     my ($self, $addr, $fqdn) = @_;
     my $greymethod = $self->{sqlgrey}{greymethod};
@@ -1370,11 +1418,33 @@ sub client_identifier {
 	# check $fqdn
 	# no fqdn, treat as suspicious
 	return $addr if $fqdn eq 'unknown';
-	my @bytes = split(/\./, $addr);
+
 	# we need the last byte
+	my @bytes = split(/\./, $addr);
 	return $addr unless defined $bytes[3];
-	# if last bytes are in fqdn, assume home-user address
-	return $addr if $fqdn =~ /$bytes[3]/ and $fqdn =~ /$bytes[2]/;
+
+        # We use Michel Bouissou's Regexp Horror Museum ;-)
+        # Regexp from hell ;-) that sorts out known SMTP servers patterns
+        if ($fqdn =~ $self->{sqlgrey}{smtp_server_re}) {
+	    $self->log(4, "Identified SMTP server pattern: $fqdn, $classc: Using C-Class.");
+	    return $classc;
+        }
+
+        # Regexp from hell ;-) that sorts out known end-user / dynamic
+        # pools patterns
+        if ($fqdn =~
+	    /(^|[0-9.x_-])((cm?|gv|h|ip|host|m|p(a|c|u)?)?0*$bytes[3]([._-]))/i) {
+	    $self->log(4, "Identified dynamic pattern (last IP byte): $fqdn, $addr: Using full IP.");
+	    return $addr;
+        }
+
+        if ($fqdn =~ $self->{sqlgrey}{dyn_fqdn_re}) {
+	    $self->log(4, "Identified dynamic pattern (name): $fqdn, $addr: Using full IP.");
+	    return $addr;
+        }
+
+	# If not specifically identified as dynamic, return C-Class address
+        $self->log(4, "No recognized pattern in name: $fqdn, $classc (.$bytes[3]): Using C-Class.");
 	return $classc;
     }
 }
@@ -1407,7 +1477,10 @@ sub smtpd_access_policy($$)
     # Check if we got the reload signal.
     # We can't process this signal as soon as we receive it as
     # we may be using variables for which it will trigger an update
-    $self->got_reload_request() and $self->update_static_whitelists();
+    if ($self->got_reload_request()) {
+	$self->update_static_whitelists();
+	$self->init_smart_regexps();
+    }
 
     # whitelist check
     if ($self->is_in_whitelists($sender_name, $sender_domain,
@@ -1667,6 +1740,7 @@ sub pre_loop_hook() {
     $self->log(4, "Initial cleanup");
     $self->cleanup();
     $self->init_whitelists();
+    $self->init_smart_regexps();
 
     if (defined $self->{server}{setsid}) {
         # Detach from terminal
@@ -1758,7 +1832,8 @@ B<sqlgrey> [I<options>...]
  -d, --daemonize            run in the background
  -k, --kill                 kill a running sqlgrey
                             (identified by 'pidfile' content)
- -f, --configfile=FILE      read config from FILE (default /etc/sqlgrey.conf)
+ -f, --configfile=FILE      read config from FILE
+                            (default /etc/sqlgrey/sqlgrey.conf)
                             expecting config_param=value lines,
                             - spaces are ignored,
                             - '#' is used for comments

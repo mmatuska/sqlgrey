@@ -1,0 +1,1 @@
+(^|[0-9.x_-])(abo|br(e|oa)dband|cabel|(hk)?cablep?|catv|cbl|cidr|d?client2?|cust(omer)?s?|dhcp|dial?(in|up)?|d[iu]p|[asx]?dsld?|dyn(a(dsl|mic)?)?|home|in-addr|modem(cable)?|(di)?pool|ppp|ptr|rev|static|user|YahooBB[0-9]{12}|c[[:alnum:]]{6,}(\.[a-z]{3})?\.virtua|[1-9]Cust[0-9]+|AC[A-Z][0-9A-F]{5}\.ipt|pcp[0-9]{6,}pcs|S0106[[:alnum:]]{12,}\.[a-z]{2})[0-9.x_-]

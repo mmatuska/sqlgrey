@@ -1,0 +1,1 @@
+^(.+[._-])*(apache|bounce|bulk|delay|d?ns|external|extranet|filter|firewall|forward|gateway|gw|m?liste?s?|(bulk|dead|mass|send|[eqw])?mail(er)?|e?mail(agent|host|hub|scan(ner)?)|messagerie|mta|v?mx|out(bound)?|pop|postfix|w?proxy|rela(is|y)|serveu?r|smarthost|v?smtp|web|www)(gate|mail|mx|pool|out|server)?[0-9]*[._-]
