@@ -1,18 +1,30 @@
 - don't use now() in WHERE clauses: hurts perf at least on PostgreSQL
+
 - bug with multiple connect entries matching a reconnection (only in multiple
   SQLgrey instances configs and in a rare race condition) to fix
   -> accept multiple connect entries in "in_connect(), recently_in_connect()"
   -> remove the delete in "put_in_connect"
+
 - external cleanup process/experiment with an adaptative cleanup algorithm
+
 - switch from log level to log categories
+
 - add an utility for statistics (reading the logs)
+
 - create a stress-testing suite (for performance/reliability tests)
+
 - use time units everywhere to make configuration easier
+
 - check if permission related SQL errors are catchable
+
 - try to exit with a proper error code when database is unavailable or the user
   doesn't have enough rights to access the pid-file
+
 - consider optin/optout (is it easy to do with Postfix? Then provide an HOWTO
   else code it in SQLgrey)
+
 - add sender e-mail based whitelist with huge warnings
+
 - experiment with SPF support
+
 - support migrating from another greylister by calling it to learn its auto-whitelists

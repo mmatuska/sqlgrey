@@ -44,6 +44,8 @@ make clean
 %config(noreplace) /etc/sqlgrey/sqlgrey.conf
 /etc/sqlgrey/clients_ip_whitelist
 /etc/sqlgrey/clients_fqdn_whitelist
+/etc/sqlgrey/dyn_fqdn.regexp
+/etc/sqlgrey/smtp_server.regexp
 
 %pre
 getent group sqlgrey > /dev/null || /usr/sbin/groupadd sqlgrey
@@ -67,6 +69,10 @@ if [ $1 = 0 ]; then
 fi
 
 %changelog
+* Wed Mar 01 2005 Lionel Bouton <lionel-dev@bouton.name>
+ - 1.5.1 release
+ - replaced smart algorithm with Michel Bouissou's one
+
 * Wed Feb 23 2005 Lionel Bouton <lionel-dev@bouton.name>
  - 1.5.0 release
  - drop support for obsolote command-line parameters
