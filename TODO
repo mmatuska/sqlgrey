@@ -8,6 +8,8 @@
 - send mails (adjustable rate) to postmaster when the database goes down and comes back
 - make maint_delay configurable
 - create a stress-testing suite (for performance/reliability tests)
+- add index on ip_addr in connect table (up the database version to 2)
+- make SQLgrey return value configurable
   
 1.5.x
 - use time units everywhere to make configuration easier
