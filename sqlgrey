@@ -42,18 +42,22 @@ my $domain_awl    = "domain_awl";
 my $net_whitelist = "net_whitelist";
 
 # defaults
-my $dflt_conffile         = "/etc/sqlgrey.conf";
-my $dflt_user             = "sqlgrey";
-my $dflt_pidfile          = "/var/run/sqlgrey.pid";
-my $dflt_reconnect_delay  = 5;            # 5 minutes
-my $dflt_max_connect_age  = 24;           # 24 hours
-my $dflt_awl_age          = 60;           # 60 days
-my $dflt_group_domain_lvl = 2;            # 2 e-mail addr from same domain/IP
-my $dflt_db_type          = "Pg";
-my $dflt_db_name          = "sqlgrey";
-my $dflt_db_host          = "localhost";
-my $dflt_db_user          = "sqlgrey";
-my $dflt_db_pass          = "";
+my %dflt;
+$dflt{user}               = "sqlgrey";
+$dflt{inet}               = "2501";
+$dflt{pidfile}            = "/var/run/sqlgrey.pid";
+$dflt{reconnect_delay}    = 5;            # 5 minutes
+$dflt{max_connect_age}    = 24;           # 24 hours
+$dflt{awl_age}            = 60;           # 60 days
+$dflt{group_domain_level} = 2;            # 2 e-mail addr from same domain/IP
+$dflt{db_type}            = "Pg";
+$dflt{db_name}            = "sqlgrey";
+$dflt{db_host}            = "localhost";
+$dflt{db_user}            = "sqlgrey";
+$dflt{db_pass}            = "";
+
+# Default configuration file
+my $config_file           = "/etc/sqlgrey.conf";
 
 ##########################
 ## Database helper subs ##
@@ -733,53 +737,88 @@ sub smtpd_access_policy($$)
 	$self->{sqlgrey}{reconnect_delay} . " minutes";
 }
 
+sub read_conffile
+{
+    my $optional_file = shift;
+    if (defined $optional_file) {
+	$config_file = $optional_file;
+    }
+    # Check if conf file is readable if explicitly told to use one
+    open(CONF, '<' . $config_file)
+	or die "Couldn't open $config_file for reading: $!\n" if (defined $optional_file) or return;
+
+    while (<CONF>) {
+        chomp;          # no newline
+        s/#.*//;        # no comments
+        s/^\s+//;       # no leading white
+        s/\s+$//;       # no trailing white
+        next unless length;     # anything left ?
+        my ($var, $value) = split(/s*=\s*/, $_, 2);
+        $dflt{$var} = $value;
+    }
+    close CONF
+	or die "Couldn't close config file $config_file\n";
+}
+
 # Setup the environment
 sub main()
 {
     # save arguments for Net:Server HUP restart
     my @ARGV_saved = @ARGV;
 
-    # parse options
+    # options parsing
     my %opt = ();
-    GetOptions(\%opt, 'help|h', 'man', 'version', 'conffile|f=s', 'verbose|v',
-        'daemonize|d', 'unix|u=s', 'inet|i=s', 'user=s', 'pidfile=s',
-        'reconnect-delay=i', 'max-connect-age=i', 'awl-age|a=i',
+    GetOptions(\%opt, 'help|h', 'man', 'version', 'configfile|f=s', 'verbose|v',
+        'daemonize|d', 'inet|i=s', 'user|u=s', 'pidfile|p=s',
+        'reconnect-delay|r=i', 'max-connect-age|m=i', 'awl-age|a=i',
         'group-domain-level|g=i', 'db-type=s', 'db-name=s', 'db-host=s',
 	'db-user=s', 'db-pass=s', 'kill|k')
 	or exit(1);
-    if($opt{help})     { pod2usage(1) }
-    if($opt{man})      { pod2usage(-exitstatus => 0, -verbose => 2) }
-    if($opt{version})  { print "sqlgrey $VERSION\n"; exit(0) }
+    if ($opt{help})    { pod2usage(1) }
+    if ($opt{man})     { pod2usage(-exitstatus => 0, -verbose => 2) }
+    if ($opt{version}) { print "sqlgrey $VERSION\n"; exit(0) }
 
-    if (!defined $opt{kill}) {
-        defined $opt{unix} or defined $opt{inet} or
-            die "ERROR: --unix or --inet must be specified\n";
-    } else {
-	my $pidfile = $opt{pidfile} ? $opt{pidfile} : $dflt_pidfile;
+    # Read the config file
+    read_conffile($opt{configfile});
+
+    # Reparse options to override file defaults
+    @ARGV = @ARGV_saved;
+    GetOptions(\%opt, 'help|h', 'man', 'version', 'configfile|f=s', 'verbose|v',
+        'daemonize|d', 'inet|i=s', 'user|u=s', 'pidfile|p=s',
+        'reconnect-delay|r=i', 'max-connect-age|m=i', 'awl-age|a=i',
+        'group-domain-level|g=i', 'db-type=s', 'db-name=s', 'db-host=s',
+	'db-user=s', 'db-pass=s', 'kill|k');
+
+    # Are we on a killing spray ?
+    if (defined $opt{kill}) {
+	my $pidfile = $opt{pidfile} ? $opt{pidfile} : $dflt{pidfile};
 	open(PIDFILE, '<' . $pidfile)
 	    or die "Coudn't read pidfile: $pidfile\n";
 	while (<PIDFILE>) { # should only have one pid
 	    kill 15, $_;
 	}
 	close PIDFILE;
+	unlink $pidfile;
 	exit;
     }
 
     # bind only localhost if no host is specified
     if(defined $opt{inet} and $opt{inet}=~/^\d+$/) {
         $opt{inet} = "localhost:$opt{inet}";
+    } elsif(defined $dflt{inet} and $dflt{inet}=~/^\d+$/) {
+        $dflt{inet} = "localhost:$dflt{inet}";
     }
 
     # create Net::Server object and run it
     my $server = bless {
         server => {
             commandline     => [ $0, @ARGV_saved ],
-            port            => [ $opt{inet} ? $opt{inet} : $opt{unix}."|unix" ],
-            proto           => $opt{inet} ? 'tcp' : 'unix',
-            user            => $opt{user} || $dflt_user,
+            port            => [ $opt{inet} ? $opt{inet} : $dflt{inet} ],
+            proto           => 'tcp',
+            user            => $opt{user} || $dflt{user},
             setsid          => $opt{daemonize} ? 1 : undef,
             pid_file        => $opt{daemonize} ?
-		   $opt{pidfile} ? $opt{pidfile} : $dflt_pidfile
+		   $opt{pidfile} ? $opt{pidfile} : $dflt{pidfile}
 		   : undef,
             log_level       => $opt{verbose} ? 4 : 2,
             log_file        => 'Sys::Syslog',
@@ -789,22 +828,24 @@ sub main()
         },
         sqlgrey => {
 	    # min time before reconnect (min)
-            reconnect_delay => $opt{'reconnect-delay'} || $dflt_reconnect_delay,
+            reconnect_delay => $opt{'reconnect-delay'}
+                 		    || $dflt{reconnect_delay},
 	    # max time before reconnect (hour)
-            max_connect_age => $opt{'max-connect-age'} || $dflt_max_connect_age,
+            max_connect_age => $opt{'max-connect-age'}
+		                    || $dflt{max_connect_age},
 	    # How long is an AWL entry valid (days)
-            awl_age         => $opt{'awl-age'} || $dflt_awl_age,
+            awl_age         => $opt{'awl-age'} || $dflt{awl_age},
 	    # How many from in same domain/IP before we switch to domain AWL
 	    domain_level    => $opt{'group-domain-level'}
-		                   || $dflt_group_domain_lvl,
+		                   || $dflt{group_domain_level},
             last_maint      => time,
 	    maint_delay     => 86400, # How often do we clean tables (seconds)
  	    # TODO move into conf
-            db_type         => $opt{'db-type'} || $dflt_db_type,
-            db_name         => $opt{'db-name'} || $dflt_db_name,
-            db_host         => $opt{'db-host'} || $dflt_db_host,
-	    db_user         => $opt{'db-user'} || $dflt_db_user,
-            db_pass         => $opt{'db-pass'} || $dflt_db_pass,
+            db_type         => $opt{'db-type'} || $dflt{db_type},
+            db_name         => $opt{'db-name'} || $dflt{db_name},
+            db_host         => $opt{'db-host'} || $dflt{db_host},
+	    db_user         => $opt{'db-user'} || $dflt{db_user},
+            db_pass         => $opt{'db-pass'} || $dflt{db_pass},
         },
     }, 'sqlgrey';
 
@@ -898,20 +939,20 @@ B<sqlgrey> [I<options>...]
      --version              output version information and exit
  -v, --verbose              increase verbosity level
 
- -u, --unix=PATH            listen on unix socket PATH
  -i, --inet=[HOST:]PORT     listen on PORT, localhost if HOST is not
-                            specified
+                            specified (default localhost:2501)
  -a, --awl-age=N            connection is valid N days in auto-white-list
                             (default: 60)
  -g, --group-domain-level=N if N email adresses from the same IP and the
                             same domain are in AWL, the whole domain is
                             put in AWL, 0 disables (default: 2)
  -d, --daemonize            run in the background
-     --pidfile=PATH         put daemon pid into this file
-     --user=USER            run as USER (default: sqlgrey)
-     --reconnect-delay=N    greylist (refuse mail) for N minutes after
+ -p, --pidfile=PATH         put daemon pid into this file
+                            (default: /var/run/sqlgrey.pid)
+ -u, --user=USER            run as USER (default: sqlgrey)
+ -r, --reconnect-delay=N    greylist (refuse mail) for N minutes after
                             first connection (default: 5)
-     --max-connect-age=N    mail transfer attempt is forgotten N hours
+ -m, --max-connect-age=N    mail transfer attempt is forgotten N hours
                             after (default: 24)
      --db-type=TYPE         DBD driver to use (mysql, Pg and SQLite are
                             tested, Pg advised for functionnality (manual
@@ -921,6 +962,21 @@ B<sqlgrey> [I<options>...]
      --db-name=NAME         default: sqlgrey
      --db-user=USER         default: sqlgrey
      --db-pass=PASS         default: '' (empty password)
+ -k, --kill                 kill a running sqlgrey
+                            (identified by 'pidfile' content)
+ -f, --configfile=FILE      read config from FILE (default /etc/sqlgrey.conf)
+                            expecting config_param=value lines,
+                            - spaces are ignored,
+                            - '#' is used for comments
+                            - parameter names using '-' (dash) on commandline
+                              use '_' (underscore)in config file
+                            example:
+                            ---------------------------------------
+                            # SQLgrey conf file
+                            db_name = other_sqlgreydb
+                            inet = 25001
+                            group_domain_level = 0 # no domain AWL
+                            ---------------------------------------
 
 =head1 DESCRIPTION
 
