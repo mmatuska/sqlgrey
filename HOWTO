@@ -18,10 +18,10 @@ you need the DBD::SQLite perl module (and libsqlite of course).
 
 # Howto :
 Read the man page (sqlgrey --man) and use "--db-type=SQLite --db-name=<db>"
-parameters
+parameters or setup /etc/sqlgrey.conf
 
 # Note :
-sqlgrey will create the file holding the database data in the working
+sqlgrey will create the file storing database data in the working
 directory.
 
 ##########
@@ -41,7 +41,7 @@ Read the man page (sqlgrey --man) and use the "--db-type=MySQL" parameter
 # Note :
 MySQL is quick, but doesn't support the network types, if you need
 whitelists for some SMTP servers, you'll have to add them in the
-Postfix configuration.
+Postfix configuration (see below).
 
 ###############
 ## PostgreSQL
@@ -88,9 +88,9 @@ Start by adding check_policy_service after reject_unauth_destination in
  smtpd_recipient_restrictions =
                ...
                reject_unauth_destination
-               check_policy_service inet:127.0.0.1:10023
+               check_policy_service inet:127.0.0.1:2501
 
-This assumes sqlgrey will listen on the TCP 10023 port.
+This assumes sqlgrey will listen on the TCP 2501 port (default).
 check_policy_service must come after reject_unauth_destination or
 you'll end up being an open-relay and listed in RBLs (you don't want
 that).
@@ -100,6 +100,7 @@ you'll have to use Postfix check_client_access :
        check_client_access    hash:/etc/postfix/sqlgrey_client_access
 
 a sqlgrey_client_access example is provided with sqlgrey.
+See http://www.greylisting.org/ for up-to-date whitelists.
 
 #################
 # RPM Packaging #

@@ -11,6 +11,7 @@ manpage:
 
 clean:
 	rm -f sqlgrey.1.gz
+	rm -f *~ init/*~ etc/*~
 
 install: all
 	$(INSTALL) -d -m 755 $(BINDIR)
