@@ -278,7 +278,7 @@ sub past_tstamp {
         }
 	return 'now() - ' . $delay;
     } else { # use PostgreSQL syntax (probably the most SQL compliant)
-        return 'timestamp ' . $self->{sqlgrey}{dbnow} .
+        return 'timestamp - ' . $self->{sqlgrey}{dbnow} .
 	    "INTERVAL '" . "$nb $unit" . "'";
     }
 }
@@ -577,6 +577,7 @@ sub cnctinfo {
 sub initdb {
     my $self = shift;
     $self->connectdb();
+    $self->update_dbnow();
     $self->database_setup();
 }
 
@@ -1495,11 +1496,6 @@ sub smtpd_access_policy($$)
     my $addr = $attr->{client_address};
     my $fqdn = $attr->{client_name};
 
-    # Is it time for cleanups ?
-    if (time() > $self->{sqlgrey}{next_maint}) {
-        $self->cleanup();
-        $self->{sqlgrey}{next_maint} = time() + $self->{sqlgrey}{db_cleandelay};
-    }
     # Check for new whitelists
     $self->update_dyn_whitelists();
     # Check if we got the reload signal.
@@ -1524,6 +1520,11 @@ sub smtpd_access_policy($$)
     my $cltid = $self->client_identifier($addr, $fqdn);
     # we need the value of now() in the database
     $self->update_dbnow();
+    # Is it time for cleanups ?
+    if (time() > $self->{sqlgrey}{next_maint}) {
+        $self->cleanup();
+        $self->{sqlgrey}{next_maint} = time() + $self->{sqlgrey}{db_cleandelay};
+    }
     # domain scale awl check
     if ($self->is_in_domain_awl($sender_domain, $cltid)) {
 	$self->log(3, "domain_awl-match: updating $sender_domain, $cltid");
