@@ -1,0 +1,61 @@
+##
+# SQLgrey expects the following expressions:
+#
+# hostname.domain.com # whole system name
+# *.domain.com        # whitelist any fqdn in the domain 'domain.com'
+# /regexp/            # whitelist any fqdn matching the regexp
+
+# Note you need the following two lines to allow both
+# <lots of mtas>.example.com and example.com
+# *.example.com
+# example.com
+
+###################
+# greylisting.org #
+###################
+
+# No retry
+*.southwest.com
+scd.yahoo.com
+*.ameritradeinfo.com
+*.amazon.com
+
+# wierd retry pattern
+isp.belgacom.be
+
+############
+# postgrey #
+############
+
+# No retry
+*.karger.ch
+gw.bas.roche.com
+mail.hhlaw.com
+prd051.appliedbiosystems.com
+*.swissre.com
+/^ms-smtp.*\.rr\.com$/
+/^lake.*mta.*\.cox\.net$/
+*.mot.com
+*.cs.columbia.edu
+cs.columbia.edu
+p01m1689.mxlogic.net
+p02m169.mxlogic.net
+
+# Address verification
+*.nic.fr
+/^sc\d+pub\.verizon\.net$/
+*.freshmeat.net
+
+# Slow retry (4 hours or more)
+server-x001.hostpoint.ch
+accor-hotels.com
+/^mail\d+\.telekom\.de$/
+/^smtp\d+\.tiscali\.dk$/
+
+# Unique sender with letters
+returns.dowjones.com
+*.zd-swx.com
+lockergnome.wc09.net
+
+# Pool on different subnets
+/^fmr\d+\.intel\.com$/

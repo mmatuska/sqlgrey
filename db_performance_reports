@@ -1,0 +1,29 @@
+David Rees reports:
+
+>- SELECT count(*) from connect, (how many entries are there)
+
+
+1248
+
+
+>> - execution time of SELECT count(*) from connect WHERE  first_seen <
+>> NOW() - INTERVAL '24 HOUR'
+
+
+Without indicies: 78ms
+With indicies   : 78ms (explain shows that the index on first_seen is not
+used)
+
+
+>> - execution time of SELECT 1 FROM connect WHERE sender_name = <val> AND
+>> sender_domain =  <val> AND ip_addr = <val> AND rcpt = <val> AND
+>> first_seen BETWEEN now() - INTERVAL '24  HOUR' AND now() - INTERVAL '6
+>> MINUTE' with and without indexes
+
+
+Without indicies: 31ms
+With indicies   : 16ms (explain shows that the index on ip_addr is used)
+
+I wonder why the first_seen index was not used.  I did run analyze on the
+table to make sure statistics were up to date.  Regardless, it does look
+like the index on ip_addr is worthwhile.
