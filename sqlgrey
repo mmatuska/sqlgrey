@@ -75,6 +75,11 @@ sub db_supports_inet {
     return ($self->{sqlgrey}{db_type}) eq "Pg" ? 1 : 0;
 }
 
+sub db_supports_tstamp {
+    my $self = shift;
+    return ($self->{sqlgrey}{db_type}) eq "SQLite" ? 0 : 1;
+}
+
 sub database_check {
     my $self = shift;
 
@@ -147,7 +152,7 @@ sub interval {
         } else {
             die "interval(" . $nb . ", " . $unit . ") for SQLite, sqlgrey doesn't recognise $unit UNIT\n";
         }
-    } else { # use PostgrSQL syntax (maybe the most SQL compliant)
+    } else { # use PostgreSQL syntax (probably the most SQL compliant)
         return "INTERVAL '" . "$nb $unit" . "'";
     }
 }
@@ -160,7 +165,7 @@ sub create_from_awl_table {
     # infinite loop in case of db connection problems
     $self->{sqlgrey}{dbh}->do("CREATE TABLE $from_awl (sender_name char(64) NOT NULL, " .
 			       "sender_domain char(255) NOT NULL, host_ip char(15) NOT NULL, " .
-			       "last_seen timestamp NOT NULL, " .
+                                "last_seen timestamp NOT NULL, " .
 			       "PRIMARY KEY (sender_name, sender_domain, host_ip));")
 	or die "Couldn't create table $from_awl: $!\n";
 }
@@ -477,9 +482,10 @@ sub get_reconnect_delay {
     my $query;
     if ($self->{sqlgrey}{db_type} eq "mysql") {
         $query = "SELECT SEC_TO_TIME(UNIX_TIMESTAMP(NOW())-UNIX_TIMESTAMP(first_seen)) FROM $connect ";
-    } elsif ($self->{sqlgrey}{db_type} eq "Pg") {
+    } else {
+#      elsif ($self->{sqlgrey}{db_type} eq "Pg") {
         $query = "SELECT now() - first_seen FROM $connect ";
-    }
+    } 
     $query .= "WHERE sender_name = ? AND sender_domain = ? AND ip_addr = ? AND rcpt = ?";
     my $sth = $dbh->prepare($query);
     if (! $sth->execute($sender_name, $sender_domain, $addr, $rcpt)) {
