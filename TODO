@@ -1,2 +1,3 @@
 - whitelisting with /etc/sqlgrey/*whitelist and /etc/sqlgrey/*whitelist.local
 - indexes on timestamps in from_awl and domain_awl
+- optionnal class-C based greylisting

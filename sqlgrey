@@ -46,7 +46,9 @@ my $config        = 'config';
 
 # defaults
 my %dflt;
-$dflt{verbose}            = 0;
+$dflt{quiet}              = undef;
+$dflt{verbose}            = undef;
+$dflt{debug}              = undef;
 $dflt{user}               = 'sqlgrey';
 $dflt{inet}               = '2501';
 $dflt{pidfile}            = '/var/run/sqlgrey.pid';
@@ -60,6 +62,7 @@ $dflt{db_host}            = 'localhost';
 $dflt{db_user}            = 'sqlgrey';
 $dflt{db_pass}            = '';
 $dflt{prepend}            = 1;
+$dflt{greymethod}         = 'smart';
 
 # Default configuration file
 my $config_file           = '/etc/sqlgrey/sqlgrey.conf';
@@ -88,7 +91,7 @@ sub do {
     if (!defined $self->{sqlgrey}{dbh} or
 	!($result = $self->{sqlgrey}{dbh}->do($query))) {
 	# failure
-        $self->log(2, "Warning: couldn't do query:\n" .
+        $self->log(1, "Warning: couldn't do query:\n" .
 		   "$query:\n" .
 		   "$DBI::errstr, reconnecting to DB");
 	$self->connectdb();
@@ -141,7 +144,7 @@ sub table_exists {
 sub interval {
     my ($self, $nb, $unit) = @_;
     my $db_type = $self->{sqlgrey}{db_type};
-    if ($db_type eq "mysql") {
+    if ($db_type eq 'mysql') {
 	# MySQL doesn't want any ' char
         return "INTERVAL $nb $unit";
     } elsif ($db_type eq 'SQLite') {
@@ -200,12 +203,12 @@ sub getconfig {
     my $sth = $self->prepare_cached("SELECT value FROM $config " .
 				    "WHERE parameter = ?");
     if (!defined $sth or !$sth->execute($param)) {
-	$self->log(2, "Error: couldn't access $config table: $DBI::errstr");
+	$self->log(1, "Error: couldn't access $config table: $DBI::errstr");
 	die "Can't continue: config table unreadable\n";
     }
     my $result = $sth->fetchall_arrayref();
     if ($#$result != 0) {
-        $self->log(2, "Error: unexpected SQL result");
+        $self->log(1, "Error: unexpected SQL result");
 	die "Can't continue: unexpected config table read error\n";
     } else {
         return $result->[0][0];
@@ -223,7 +226,7 @@ sub setconfig {
     my $sth = $self->prepare_cached("SELECT value FROM $config " .
 				    "WHERE parameter = ?");
     if (!defined $sth or !$sth->execute($param)) {
-	$self->log(2, "Error: couldn't access $config table: $DBI::errstr");
+	$self->log(1, "Error: couldn't access $config table: $DBI::errstr");
 	die "Can't continue: config table unreadable\n";
     }
     my $result = $sth->fetchall_arrayref();
@@ -296,6 +299,7 @@ sub upgrade() {
 sub upgrade0() {
     my $self = shift;
     my $db_type = $self->{sqlgrey}{db_type};
+    $self->log(2, "Upgrading database schema from version 0 to version 1");
     if ($db_type ne "SQLite") {
 	# 0 -> 1 : char to varchar
 	# rename current table and dump content into new ones
@@ -314,7 +318,7 @@ sub upgrade0() {
 	# from_awl
 	$self->log(2, "CHAR -> VARCHAR in $from_awl table");
 	$self->do("ALTER TABLE $from_awl RENAME TO $from_awl" . "old");
-	if ($db_type eq "Pg") {
+	if ($db_type eq 'Pg') {
 	    # we need to remove the pkey constraint
 	    $self->do("ALTER TABLE $from_awl" . "old DROP CONSTRAINT " .
 		      "from_awl_pkey");
@@ -329,7 +333,7 @@ sub upgrade0() {
 	# domain_awl
 	$self->log(2, "CHAR -> VARCHAR in $domain_awl table");
 	$self->do("ALTER TABLE $domain_awl RENAME TO $domain_awl" . "old");
-	if ($db_type eq "Pg") {
+	if ($db_type eq 'Pg') {
 	    # we need to remove the pkey constraint
 	    $self->do("ALTER TABLE $domain_awl" . "old DROP CONSTRAINT " .
 		      "domain_awl_pkey");
@@ -343,6 +347,8 @@ sub upgrade0() {
 
 	# net_whitelist not needed anymore
 	if ($self->table_exists("net_whitelist")) {
+	    $self->log(2, "net_whitelist not supported anymore, " .
+		       "see /etc/sqlgrey/clients_*_whitelist");
 	    $self->do("DROP TABLE net_whitelist");
 	}
     } else {
@@ -360,7 +366,7 @@ sub cnctinfo {
     my $db_type = $self->{sqlgrey}{db_type};
     my $dsn = "DBI:" . $db_type;
     # only MySQL uses database=
-    if ($db_type eq "mysql") {
+    if ($db_type eq 'mysql') {
         $dsn .= ":database=";
     } else {
         $dsn .= ":dbname=";
@@ -389,15 +395,15 @@ sub connectdb {
 						{ PrintError => 0,
 						  AutoCommit => 1 }
 					       )
-	or $self->log(2, "Can't connect to DB: $DBI::errstr");
+	or $self->log(1, "Can't connect to DB: $DBI::errstr");
 
     # mysql drops the connection, we have some glue code
     # to reinit the connection, but better use mysql DBD code
-    if ($db_type eq "mysql") {
+    if ($db_type eq 'mysql') {
         $self->{sqlgrey}{dbh}->{mysql_auto_reconnect} = 1;
     }
     # Create "now()" function for SQLite
-    if ($db_type eq "SQLite") {
+    if ($db_type eq 'SQLite') {
         $self->{sqlgrey}{dbh}->func('now', 0, sub { return time },
 				    'create_function' );
     }
@@ -451,6 +457,13 @@ sub create_config_table {
         or die "Couldn't create table $config: $DBI::errstr\n";
 }
 
+##########
+## Misc ##
+##########
+sub class_c {
+    return join('.', (split(/\./, shift))[0..2]);
+}
+
 #################
 ## Normalizers ##
 #################
@@ -460,7 +473,7 @@ sub normalize_sender {
     my $self = shift;
     my $from = lc shift;
     my $empty = "-undef-";
-    if ($from eq "") {
+    if ($from eq '') {
         # Probably MAILER-DAEMON talking to us
         return ("$empty","$empty")
     }
@@ -628,14 +641,14 @@ sub count_from_awl {
     my $sth = $self->prepare_cached("SELECT COUNT(*) FROM $from_awl " .
 				    "WHERE sender_domain = ? AND host_ip = ?");
     if (!defined $sth or !$sth->execute($sender_domain, $host)) {
-	$self->log(2, "Error: couldn't access $from_awl table: $DBI::errstr");
+	$self->log(1, "Error: couldn't access $from_awl table: $DBI::errstr");
 	$self->connectdb();
         return 0; # do as if table is empty
     }
 
     my $result = $sth->fetchall_arrayref();
     if ($#$result != 0) {
-        $self->log(2, "Error: unexpected SQL result");
+        $self->log(1, "Error: unexpected SQL result");
 	return 0; # do as if table is empty
     } else {
         return $result->[0][0];
@@ -678,8 +691,164 @@ sub move_domain_from_mail_to_domain_awl {
     $self->delete_domain_from_mail_awl($domain, $host);
 }
 
-##############
-## Whitelist
+############
+## Connect
+
+# check for a valid reconnection
+sub in_connect {
+    my ($self, $sender_name, $sender_domain, $addr, $rcpt) = @_;
+
+    # last_seen less than $self->{sqlgrey}{max_connect_age} hours ago
+    # but more than $self->{sqlgrey}{reconnect_delay} minutes ago
+    my $query = "SELECT 1 FROM $connect " .
+            	"WHERE sender_name = ? AND sender_domain = ? " .
+	        "AND ip_addr = ? AND rcpt = ? " .
+		"AND first_seen BETWEEN now() - " .
+		$self->interval($self->{sqlgrey}{max_connect_age},
+				"HOUR") .
+		" AND now() - " .
+		$self->interval($self->{sqlgrey}{reconnect_delay},
+				"MINUTE");
+    my $sth = $self->prepare_cached($query);
+    if (!defined $sth or !$sth->execute($sender_name, $sender_domain, $addr, $rcpt)) {
+        $self->log(1, "Error: couldn't access $connect table: $DBI::errstr");
+	$self->connectdb();
+        return 1; # in doubt, accept
+    }
+    my $result = $sth->fetchall_arrayref();
+    if ($#$result != 0) {
+	return 0; # not a single entry
+    } else {
+	return 1; # one single entry (no multiple entries by design)
+    }
+}
+
+# check for early reconnection
+sub recently_in_connect {
+    my ($self, $sender_name, $sender_domain, $addr, $rcpt) = @_;
+
+    # last_seen less than $self->{sqlgrey}{reconnect_delay} minutes ago
+    my $query = "SELECT 1 FROM $connect WHERE sender_name = ? " .
+	        "AND sender_domain = ? " .
+        	"AND ip_addr = ? AND rcpt = ? " .
+	        "AND first_seen >= now() - " .
+		$self->interval($self->{sqlgrey}{reconnect_delay},
+				"MINUTE");
+    my $sth = $self->prepare_cached($query);
+    if (!defined $sth or !$sth->execute($sender_name, $sender_domain, $addr, $rcpt)) {
+        $self->log(1, "Error: Couldn't access $connect table: $DBI::errstr");
+	$self->connectdb();
+        return 0; # in doubt, accept
+    }
+    my $result = $sth->fetchall_arrayref();
+    if ($#$result != 0) {
+	return 0; # not a single entry
+    } else {
+	return 1; # one single entry (no multiple entries by design)
+    }
+}
+
+# add a first attempt
+sub put_in_connect {
+    my ($self, $sender_name, $sender_domain, $addr, $rcpt) = @_;
+    my $dbh = $self->{sqlgrey}{dbh};
+
+    # delete old entries
+    $self->do("DELETE FROM $connect " .
+	      "WHERE sender_name = " . $self->quote($sender_name) .
+	      " AND sender_domain = " . $self->quote($sender_domain) .
+	      " AND ip_addr = " . $self->quote($addr) .
+	      " AND rcpt = " . $self->quote($rcpt));
+
+    # create new entry
+    $self->do("INSERT INTO $connect (sender_name, sender_domain, " .
+	      "ip_addr, rcpt, first_seen) " .
+	      "VALUES(" .
+	      $self->quote($sender_name) . "," .
+	      $self->quote($sender_domain) . "," .
+	      $self->quote($addr) . "," .
+	      $self->quote($rcpt) . ", NOW())");
+}
+
+# For logging purpose
+sub get_reconnect_delay {
+    my ($self, $sender_name, $sender_domain, $addr, $rcpt) = @_;
+
+    my $query;
+    if ($self->{sqlgrey}{db_type} eq 'mysql') {
+        $query = "SELECT SEC_TO_TIME(UNIX_TIMESTAMP(NOW())-" .
+	                            "UNIX_TIMESTAMP(first_seen)) " .
+		 "FROM $connect ";
+    } else {
+        $query = "SELECT now() - first_seen FROM $connect ";
+    } 
+    $query .= "WHERE sender_name = ? AND sender_domain = ? " .
+	      "AND ip_addr = ? AND rcpt = ?";
+    my $sth = $self->prepare_cached($query);
+    if (!defined $sth or !$sth->execute($sender_name, $sender_domain, $addr, $rcpt)) {
+        $self->log(1, "Error: couldn't get reconnect delay: $DBI::errstr");
+        return "sql error";
+    }
+    my $result = $sth->fetchall_arrayref();
+    if ($#$result != 0) {
+        $self->log(1, "Error: no connect in database for " .
+		      "$sender_name\@$sender_domain, $addr, $rcpt");
+	return "error: nothing in connect";
+    } else {
+        return $result->[0][0];
+    }
+}
+
+# Clean connect entries for a whitelisted mail/IP
+sub delete_mail_ip_from_connect {
+    my ($self, $sender_name, $sender_domain, $addr) = @_;
+
+    $self->do("DELETE FROM $connect " .
+	      "WHERE sender_name = '$sender_name' " .
+	      "AND sender_domain = '$sender_domain' " .
+	      "AND ip_addr = '$addr'");
+}
+
+# clean probable SPAM attempts and log them
+sub cleanup_connect {
+    my $self = shift;
+    my $max_connect_age = $self->{sqlgrey}{max_connect_age};
+
+    # Print probable SPAM:
+    my $query = "SELECT sender_name, sender_domain, ip_addr, " .
+        	"rcpt, first_seen " .
+		"FROM $connect " .
+	        "WHERE first_seen < now() - " .
+		$self->interval($max_connect_age, "HOUR");
+    my $sth = $self->prepare_cached($query);
+    if (defined $sth and $sth->execute()) {
+	my $result = $sth->fetchall_arrayref();
+	for my $spam (@{$result}) {
+	    $self->log(2, "Probable spam: $$spam[2]: " .
+		       "$$spam[0]\@$$spam[1] -> " .
+		       "$$spam[3] at $$spam[4]");
+	}
+    } else {
+	$self->log(1, "Error: couldn't list detected spam attempts");
+	$self->connectdb();
+    }
+    $self->do("DELETE FROM $connect " .
+	      "WHERE first_seen < now() - " .
+	      $self->interval($max_connect_age, "HOUR")
+	     );
+}
+
+## General cleanup
+sub cleanup {
+    my ($self) = @_;
+    $self->cleanup_from_awl();
+    $self->cleanup_domain_awl();
+    $self->cleanup_connect();
+}
+
+##################
+## Whitelisting ##
+##################
 
 sub init_whitelists {
     my $self = shift;
@@ -740,7 +909,7 @@ sub read_an_ip_whitelist {
 	    $whitelist->{C}{$_} = '';
 	    next;
 	} else {
-	    $self->log(2,"Unrecognised line in $file: $_");
+	    $self->log(1,"Unrecognised line in $file: $_");
 	}
     }
     close FILE;
@@ -789,7 +958,7 @@ sub read_an_fqdn_whitelist {
 	} elsif (/^([\w-]+\.)+[\w-]+$/) { # looks like a system name
 	    $system_whitelist->{$_} = 1;
 	} else {
-	    $self->log(2, "Unrecognised line in $file: $_");
+	    $self->log(1, "Unrecognised line in $file: $_");
 	}
     }
     close FILE;
@@ -858,18 +1027,15 @@ sub is_in_fqdn_whitelists {
 
 sub is_in_static_ip_whitelist {
     my ($self, $ip) = @_;
-    my $c_net = join('.', (split(/\./, $ip))[0..2]);
 
     return (defined $self->{sqlgrey}{stat_ip_whitelist}->{IP}{$ip}
-	or defined $self->{sqlgrey}{stat_ip_whitelist}->{C}{$c_net});
+	or defined $self->{sqlgrey}{stat_ip_whitelist}->{C}{class_c($ip)});
 }
 
 sub is_in_dyn_ip_whitelist {
     my ($self, $ip) = @_;
-    my $c_net = join('.', (split(/\./, $ip))[0..2]);
-
     return (defined $self->{sqlgrey}{dyn_ip_whitelist}->{IP}{$ip}
-	or defined $self->{sqlgrey}{dyn_ip_whitelist}->{C}{$c_net});
+	or defined $self->{sqlgrey}{dyn_ip_whitelist}->{C}{class_c($ip)});
 }
 
 sub is_in_static_fqdn_whitelist {
@@ -906,159 +1072,27 @@ sub is_in_fqdn_whitelist {
     return 0;
 }
 
-############
-## Connect
+## class-C based greylisting
+sub client_identifier {
+    my ($self, $addr, $fqdn) = @_;
+    my $greymethod = $self->{sqlgrey}{greymethod};
+    my $classc = class_c($addr);
 
-# check for a valid reconnection
-sub in_connect {
-    my ($self, $sender_name, $sender_domain, $addr, $rcpt) = @_;
-
-    # last_seen less than $self->{sqlgrey}{max_connect_age} hours ago
-    # but more than $self->{sqlgrey}{reconnect_delay} minutes ago
-    my $query = "SELECT 1 FROM $connect " .
-            	"WHERE sender_name = ? AND sender_domain = ? " .
-	        "AND ip_addr = ? AND rcpt = ? " .
-		"AND first_seen BETWEEN now() - " .
-		$self->interval($self->{sqlgrey}{max_connect_age},
-				"HOUR") .
-		" AND now() - " .
-		$self->interval($self->{sqlgrey}{reconnect_delay},
-				"MINUTE");
-    my $sth = $self->prepare_cached($query);
-    if (!defined $sth or !$sth->execute($sender_name, $sender_domain, $addr, $rcpt)) {
-        $self->log(2, "Error: couldn't access $connect table: $DBI::errstr");
-	$self->connectdb();
-        return 1; # in doubt, accept
+    if ($greymethod eq 'full') {
+	return $addr;
+    } elsif ($greymethod eq 'classc') {
+	return $classc;
+    } elsif ($greymethod eq 'smart') {
+	# check $fqdn
+	# no fqdn, treat as suspicious
+	return $addr if $fqdn eq 'unknown';
+	my @bytes = split(/\./, $addr);
+	# we need the last byte
+	return $addr unless defined $bytes[3];
+	# if last bytes are in fqdn, assume home-user address
+	return $addr if $fqdn =~ /$bytes[3]/ and $fqdn =~ /$bytes[2]/;
+	return $classc;
     }
-    my $result = $sth->fetchall_arrayref();
-    if ($#$result != 0) {
-	return 0; # not a single entry
-    } else {
-	return 1; # one single entry (no multiple entries by design)
-    }
-}
-
-# check for early reconnection
-sub recently_in_connect {
-    my ($self, $sender_name, $sender_domain, $addr, $rcpt) = @_;
-
-    # last_seen less than $self->{sqlgrey}{reconnect_delay} minutes ago
-    my $query = "SELECT 1 FROM $connect WHERE sender_name = ? " .
-	        "AND sender_domain = ? " .
-        	"AND ip_addr = ? AND rcpt = ? " .
-	        "AND first_seen >= now() - " .
-		$self->interval($self->{sqlgrey}{reconnect_delay},
-				"MINUTE");
-    my $sth = $self->prepare_cached($query);
-    if (!defined $sth or !$sth->execute($sender_name, $sender_domain, $addr, $rcpt)) {
-        $self->log(2, "Error: Couldn't access $connect table: $DBI::errstr");
-	$self->connectdb();
-        return 0; # in doubt, accept
-    }
-    my $result = $sth->fetchall_arrayref();
-    if ($#$result != 0) {
-	return 0; # not a single entry
-    } else {
-	return 1; # one single entry (no multiple entries by design)
-    }
-}
-
-# add a first attempt
-sub put_in_connect {
-    my ($self, $sender_name, $sender_domain, $addr, $rcpt) = @_;
-    my $dbh = $self->{sqlgrey}{dbh};
-
-    # delete old entries
-    $self->do("DELETE FROM $connect " .
-	      "WHERE sender_name = " . $self->quote($sender_name) .
-	      " AND sender_domain = " . $self->quote($sender_domain) .
-	      " AND ip_addr = " . $self->quote($addr) .
-	      " AND rcpt = " . $self->quote($rcpt));
-
-    # create new entry
-    $self->do("INSERT INTO $connect (sender_name, sender_domain, " .
-	      "ip_addr, rcpt, first_seen) " .
-	      "VALUES(" .
-	      $self->quote($sender_name) . "," .
-	      $self->quote($sender_domain) . "," .
-	      $self->quote($addr) . "," .
-	      $self->quote($rcpt) . ", NOW())");
-}
-
-# For logging purpose
-sub get_reconnect_delay {
-    my ($self, $sender_name, $sender_domain, $addr, $rcpt) = @_;
-
-    my $query;
-    if ($self->{sqlgrey}{db_type} eq "mysql") {
-        $query = "SELECT SEC_TO_TIME(UNIX_TIMESTAMP(NOW())-" .
-	                            "UNIX_TIMESTAMP(first_seen)) " .
-		 "FROM $connect ";
-    } else {
-        $query = "SELECT now() - first_seen FROM $connect ";
-    } 
-    $query .= "WHERE sender_name = ? AND sender_domain = ? " .
-	      "AND ip_addr = ? AND rcpt = ?";
-    my $sth = $self->prepare_cached($query);
-    if (!defined $sth or !$sth->execute($sender_name, $sender_domain, $addr, $rcpt)) {
-        $self->log(2, "Error: couldn't get reconnect delay: $DBI::errstr");
-        return "sql error";
-    }
-    my $result = $sth->fetchall_arrayref();
-    if ($#$result != 0) {
-        $self->log(2, "Error: no connect in database for " .
-		      "$sender_name\@$sender_domain, $addr, $rcpt");
-	return "error: nothing in connect";
-    } else {
-        return $result->[0][0];
-    }
-}
-
-# Clean connect entries for a whitelisted mail/IP
-sub delete_mail_ip_from_connect {
-    my ($self, $sender_name, $sender_domain, $addr) = @_;
-
-    $self->do("DELETE FROM $connect " .
-	      "WHERE sender_name = '$sender_name' " .
-	      "AND sender_domain = '$sender_domain' " .
-	      "AND ip_addr = '$addr'");
-}
-
-# clean probable SPAM attempts and log them
-sub cleanup_connect {
-    my $self = shift;
-    my $max_connect_age = $self->{sqlgrey}{max_connect_age};
-
-    # Print probable SPAM:
-    my $query = "SELECT sender_name, sender_domain, ip_addr, " .
-        	"rcpt, first_seen " .
-		"FROM $connect " .
-	        "WHERE first_seen < now() - " .
-		$self->interval($max_connect_age, "HOUR");
-    my $sth = $self->prepare_cached($query);
-    if (defined $sth and $sth->execute()) {
-	my $result = $sth->fetchall_arrayref();
-	for my $spam (@{$result}) {
-	    $self->log(2, "Probable spam: $$spam[2]: " .
-		       "$$spam[0]\@$$spam[1] -> " .
-		       "$$spam[3] at $$spam[4]");
-	}
-    } else {
-	$self->log(2, "Error: couldn't list detected spam attempts");
-	$self->connectdb();
-    }
-    $self->do("DELETE FROM $connect " .
-	      "WHERE first_seen < now() - " .
-	      $self->interval($max_connect_age, "HOUR")
-	     );
-}
-
-## General cleanup
-sub cleanup {
-    my ($self) = @_;
-    $self->cleanup_from_awl();
-    $self->cleanup_domain_awl();
-    $self->cleanup_connect();
 }
 
 # main routine:
@@ -1093,67 +1127,69 @@ sub smtpd_access_policy($$)
 	    $prepend . 'whitelisted by ' . $software
 	    : 'dunno';
     }
+
+    my $cltid = client_identifier($addr, $fqdn);
     # domain scale awl check
-    if ($self->is_in_domain_awl($sender_domain, $addr)) {
-	$self->log(3, "domain_awl-match: updating $sender_domain, $addr");
+    if ($self->is_in_domain_awl($sender_domain, $cltid)) {
+	$self->log(3, "domain_awl-match: updating $sender_domain, $cltid");
 	# update awl entry
-	$self->update_domain_awl($sender_domain, $addr);
+	$self->update_domain_awl($sender_domain, $cltid);
 	return $self->{sqlgrey}{prepend} ?
 	    $prepend . 'domain auto-whitelisted by ' . $software
 	    : 'dunno';
     }
     # address scale awl check
-    if ($self->is_in_from_awl($sender_name, $sender_domain, $addr)) {
-	$self->log(3, "from_awl-match: updating $addr: " .
+    if ($self->is_in_from_awl($sender_name, $sender_domain, $cltid)) {
+	$self->log(3, "from_awl-match: updating $cltid: " .
 		      "$sender_name\@$sender_domain");
 	# update awl entry
-	$self->update_from_awl($sender_name, $sender_domain, $addr);
+	$self->update_from_awl($sender_name, $sender_domain, $cltid);
 	return $self->{sqlgrey}{prepend} ?
 	    $prepend . 'from auto-whitelisted by ' . $software
 	    : 'dunno';
     }
     # is it an early reconnect ?
     if ($self->recently_in_connect($sender_name, $sender_domain,
-				   $addr, $recipient)) {
-        $self->log(2, "reconnect too early: $addr: " .
+				   $cltid, $recipient)) {
+        $self->log(2, "reconnect too early: $cltid: " .
 	 	      "$sender_name\@$sender_domain -> $recipient");
         return "defer_if_permit Greylisted for " .
 	    $self->{sqlgrey}{reconnect_delay} . " minutes";
     }
     # is it a reconnection ?
-    if ($self->in_connect($sender_name, $sender_domain, $addr, $recipient)) {
+    if ($self->in_connect($sender_name, $sender_domain, $cltid, $recipient)) {
 	my $delay = $self->get_reconnect_delay($sender_name, $sender_domain,
-					       $addr, $recipient);
-        $self->log(2, "$addr: $sender_name" . "\@" . $sender_domain .
+					       $cltid, $recipient);
+        $self->log(2, "$cltid: $sender_name" . "\@" . $sender_domain .
 		      " -> $recipient: reconnect($delay) ok, adding to AWL");
 	# check if we have others from the same domain in the from_awl
 	# add 1 for our sample and compare to the aggregation level
 	if (
 	    ($self->{sqlgrey}{domain_level} != 0)
 	    and
-	    ($self->count_from_awl($sender_domain, $addr)+1 >=
+	    ($self->count_from_awl($sender_domain, $cltid)+1 >=
 	     $self->{sqlgrey}{domain_level})
 	   ) {
 	    # use domain-level AWL
 	    $self->move_domain_from_mail_to_domain_awl($sender_domain,
-						       $addr);
-	    $self->log(2, "$addr,$sender_domain reached " .
+						       $cltid);
+	    $self->log(2, "$cltid,$sender_domain reached " .
 		           $self->{sqlgrey}{domain_level} .
 		           ", using domain-level AWL now");
 	} else {
 	    # add to mail-level AWL
 	    $self->log(2, "$sender_name" . "\@" . "$sender_domain: " .
-		          "$addr added to mail-level AWL");
-	    $self->put_in_from_awl($sender_name, $sender_domain, $addr);
+		          "$cltid added to mail-level AWL");
+	    $self->put_in_from_awl($sender_name, $sender_domain, $cltid);
 	}
 	$self->delete_mail_ip_from_connect($sender_name, $sender_domain,
-					   $addr);
+					   $cltid);
 	return $self->{sqlgrey}{prepend} ?
 	    $prepend . "delayed $delay by $software" : 'dunno';
     }
     # new connection
-    $self->log(2, "new: $addr: $sender_name\@$sender_domain -> $recipient");
-    $self->put_in_connect($sender_name, $sender_domain, $addr, $recipient);
+    $self->log(2, "new: $cltid: $sender_name\@$sender_domain -> $recipient");
+    $self->put_in_connect($sender_name, $sender_domain, $cltid, $recipient);
     return "defer_if_permit Greylisted for " .
 	$self->{sqlgrey}{reconnect_delay} . " minutes";
 }
@@ -1186,6 +1222,10 @@ sub read_conffile
 	or die "Couldn't close config file $config_file\n";
 }
 
+sub help {
+    pod2usage(1);
+}
+
 # Setup the environment
 sub main()
 {
@@ -1194,14 +1234,15 @@ sub main()
 
     # options parsing
     my %opt = ();
-    GetOptions(\%opt, 'help|h', 'man', 'version', 'configfile|f=s', 'verbose|v',
-        'daemonize|d', 'inet|i=s', 'user|u=s', 'pidfile|p=s',
-        'reconnect-delay|r=i', 'max-connect-age|m=i', 'awl-age|a=i',
-        'group-domain-level|g=i', 'db-type=s', 'db-name=s', 'db-host=s',
-	'db-user=s', 'db-pass=s', 'kill|k', 'prepend=i')
+    GetOptions(\%opt, 'help|h', 'man', 'version', 'configfile|f=s',
+	'verbose|v', 'quiet|q', 'debug','daemonize|d', 'inet|i=s',
+	'user|u=s', 'pidfile|p=s', 'reconnect-delay|r=i',
+        'max-connect-age|m=i', 'awl-age|a=i','group-domain-level|g=i',
+        'db-type=s', 'db-name=s', 'db-host=s', 'db-user=s', 'db-pass=s',
+        'kill|k', 'prepend=i', 'greymethod=s')
 	or exit(1);
 
-    if ($opt{help})    { pod2usage(1) }
+    if ($opt{help})    { help() }
     if ($opt{man})     { pod2usage(-exitstatus => 0, -verbose => 2) }
     if ($opt{version}) { print "sqlgrey $VERSION\n"; exit(0) }
 
@@ -1228,6 +1269,20 @@ sub main()
         $dflt{inet} = "localhost:$dflt{inet}";
     }
 
+    my $loglevel = 2;
+    if (defined $opt{debug}) {
+	$loglevel = 4;
+    } elsif (defined $opt{verbose}) {
+	$loglevel = 3;
+    } elsif (defined $opt{quiet}) {
+	$loglevel = 1;
+    } elsif (defined $dflt{debug}) {
+	$loglevel = 4;
+    } elsif (defined $dflt{verbose}) {
+	$loglevel = 3;
+    } elsif (defined $dflt{quiet}) {
+	$loglevel = 1;
+    }
     # create Net::Server object and run it
     my $server = bless {
         server => {
@@ -1239,7 +1294,7 @@ sub main()
             pid_file        => $opt{daemonize} ?
 		   $opt{pidfile} ? $opt{pidfile} : $dflt{pidfile}
 		   : undef,
-            log_level       => ($opt{verbose} || ($dflt{verbose} != 0)) ? 4 : 2,
+            log_level       => $loglevel,
             log_file        => 'Sys::Syslog',
             syslog_facility => 'mail',
             syslog_logsock  => 'unix',
@@ -1265,10 +1320,16 @@ sub main()
             db_host         => $opt{'db-host'} || $dflt{db_host},
 	    db_user         => $opt{'db-user'} || $dflt{db_user},
             db_pass         => $opt{'db-pass'} || $dflt{db_pass},
-	    prepend         => $opt{prepend} || $dflt{prepend},
+	    prepend         => $opt{prepend}   || $dflt{prepend},
+	    greymethod      => $opt{greymethod} || $dflt{greymethod},
         },
     }, 'sqlgrey';
 
+    my $greymethod = $server->{sqlgrey}{greymethod};
+    if ($greymethod ne 'smart' and $greymethod ne 'full' and
+	$greymethod ne 'classc') {
+	pod2usage(1);
+    }
     $server->run;
 }
 
@@ -1365,8 +1426,9 @@ B<sqlgrey> [I<options>...]
  -h, --help                 display this help and exit
      --man                  display man page
      --version              output version information and exit
+ -q  --quiet                only log errors
  -v, --verbose              increase log level
-
+     --debug                further increase log level
  -i, --inet=[HOST:]PORT     listen on PORT, localhost if HOST is not
                             specified (default localhost:2501)
  -a, --awl-age=N            connection is valid N days in auto-white-list
@@ -1382,6 +1444,8 @@ B<sqlgrey> [I<options>...]
                             first connection (default: 1)
  -m, --max-connect-age=N    mail transfer attempt is forgotten N hours
                             after (default: 24)
+     --greymethod=[full|classc|smart]
+                            How to greylist, default: smart
      --db-type=TYPE         DBD driver to use (mysql, Pg and SQLite are
                             tested (default: Pg)
      --db-host=HOSTNAME     default: localhost
