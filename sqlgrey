@@ -33,7 +33,7 @@ use DBI;
 use vars qw(@ISA);
 @ISA = qw(Net::Server::Multiplex);
 
-my $VERSION = "1.4.4";
+my $VERSION = "1.4.4.1";
 my $software = 'SQLgrey-' . "$VERSION";
 
 my $DB_VERSION = 1;
@@ -554,6 +554,28 @@ sub class_c {
 ## Normalizers ##
 #################
 
+# generic single-use addresses
+# normaliser
+sub deverp_user {
+    my $user = shift;
+
+    ## Try to match single-use addresses
+    # SRS (first and subsequent levels of forwarding)
+    $user =~ s/^SRS0=[^=]+=[^=]+=([^=]+)=([^=]+)^/SRS0=#=#=$1=$2/;
+    $user =~ s/^SRS1=[^=]+=([^=]+)=[^=]+=([^=]+)=([^=]+)$/SRS1=#=$1=#=#=$2=$3/;
+    # strip extension, used sometimes for mailing-list VERP
+    $user =~ s/\+.*//;
+    # strip hexadecimal sequences (doable in one regexp ?)
+    $user =~ s/([\._-])[0-9A-Fa-f]+([\._-])/$1#$2/g;
+    #$user =~ s/^[0-9A-Fa-f]+([\._-])/#$1/g;
+    $user =~ s/([\._-])[0-9A-Fa-f]+$/$1#/g;
+    # Simple VERP substitution : replace numbers with '#'
+    # will match VERP mailing-list message retransmissions
+    $user =~ s/\b\d+\b/#/g;
+
+    return $user;
+}
+
 # get sender's user/domain
 sub normalize_sender {
     my $self = shift;
@@ -576,22 +598,11 @@ sub normalize_sender {
         # log : shouldn't happen
         $self->log(1, "undefined user, from is '$from'");
     }
-    ## Try to match single-use addresses
-    # SRS (first and subsequent levels of forwarding)
-    $user =~ s/^SRS0=[^=]+=[^=]+=([^=]+)=([^=]+)^/SRS0=#=#=$1=$2/;
-    $user =~ s/^SRS1=[^=]+=([^=]+)=[^=]+=([^=]+)=([^=]+)$/SRS1=#=$1=#=#=$2=$3/;
-    # strip extension, used sometimes for mailing-list VERP
-    $user =~ s/\+.*//;
-    # strip hexadecimal sequences (doable in one regexp ?)
-    $user =~ s/([\._-])[0-9A-Fa-f]+([\._-])/$1#$2/g;
-    #$user =~ s/^[0-9A-Fa-f]+([\._-])/#$1/g;
-    $user =~ s/([\._-])[0-9A-Fa-f]+$/$1#/g;
-    # Simple VERP substitution : replace numbers with '#'
-    # will match VERP mailing-list message retransmissions
-    $user =~ s/\b\d+\b/#/g;
+
     # per RFC, user should be < 64, domain < 255
     # our database schema doesn't support more
-    return (substr($user, 0, 64),substr($domain, 0, 255));
+    return (substr($user, 0, 64),substr($domain, 0, 255),
+	    substr(deverp_user($user), 0, 64));
 }
 
 # make sure rcpt will be VARCHAR storable
@@ -599,14 +610,10 @@ sub normalize_rcpt {
     my $self = shift;
     my $to = lc shift;
     my ($user, $domain) = split(/@/, $to, 2);
-    defined $domain or return $to;
-    # VERP substitution (see comments for normalize_sender)
-    $user =~ s/\+.*//;
-    $user =~ s/\b\d+\b/#/g;
+    defined $domain or return substr($to, 0, 255);
+
     # trim to 255 chars ( although "$user" . "@" . "$domain"
     # can be 64 + 1 + 255, VARCHAR is 255 max)
-    # Note: SQLgrey won't greylist as well some rare rcpt addresses
-    # these adresses can be whitelisted implicitely
     return substr("$user\@$domain", 0, 255);
 }
 
@@ -1237,25 +1244,23 @@ sub smtpd_access_policy($$)
     my ($self, $attr) = @_;
 
     # prepare lookup
-    my ($sender_name,$sender_domain) =
+    my ($sender_name,$sender_domain,$deverp_sender_name) =
 	$self->normalize_sender($attr->{sender});
     my $recipient = $self->normalize_rcpt($attr->{recipient});
     my $addr = $attr->{client_address};
     my $fqdn = $attr->{client_name};
 
     # Is it time for cleanups ?
-    if (time() > ($self->{sqlgrey}{last_maint} +
-		  $self->{sqlgrey}{db_cleandelay})
-       ) {
+    if (time() > $self->{sqlgrey}{next_maint}) {
         # $self->log(4, "Maintenance delay expired: cleanup triggered");
         $self->cleanup();
-        $self->{sqlgrey}{last_maint} = time();
+        $self->{sqlgrey}{next_maint} = time() + $self->{sqlgrey}{db_cleandelay};
     }
     # Check for new whitelists
     $self->update_dyn_whitelists();
     # Check if we got the reload signal.
-    # We can't process this signal as soon as we receive it.
-    # We may be using variables for which it will trigger an update
+    # We can't process this signal as soon as we receive it as
+    # we may be using variables for which it will trigger an update
     $self->got_reload_request() and $self->update_static_whitelists();
 
     # whitelist check
@@ -1278,11 +1283,11 @@ sub smtpd_access_policy($$)
 	    : 'dunno';
     }
     # address scale awl check
-    if ($self->is_in_from_awl($sender_name, $sender_domain, $cltid)) {
+    if ($self->is_in_from_awl($deverp_sender_name, $sender_domain, $cltid)) {
 	$self->log(3, "from_awl-match: updating $cltid: " .
 		      "$sender_name\@$sender_domain");
 	# update awl entry
-	$self->update_from_awl($sender_name, $sender_domain, $cltid);
+	$self->update_from_awl($deverp_sender_name, $sender_domain, $cltid);
 	return $self->{sqlgrey}{prepend} ?
 	    $prepend . 'from auto-whitelisted by ' . $software
 	    : 'dunno';
@@ -1317,9 +1322,9 @@ sub smtpd_access_policy($$)
 		           ", using domain-level AWL now");
 	} else {
 	    # add to mail-level AWL
-	    $self->log(2, "$sender_name" . "\@" . "$sender_domain: " .
+	    $self->log(2, "$deverp_sender_name" . "\@" . "$sender_domain: " .
 		          "$cltid added to mail-level AWL");
-	    $self->put_in_from_awl($sender_name, $sender_domain, $cltid);
+	    $self->put_in_from_awl($deverp_sender_name, $sender_domain, $cltid);
 	}
 	$self->delete_mail_ip_from_connect($sender_name, $sender_domain,
 					   $cltid);
@@ -1425,6 +1430,9 @@ sub main()
     } elsif (defined $dflt{quiet}) {
 	$loglevel = 1;
     }
+
+    # used 2 times in the following struct
+    my $cleandelay = $opt{'db-cleandelay'} || $dflt{db_cleandelay};
     # create Net::Server object and run it
     my $server = bless {
         server => {
@@ -1456,9 +1464,8 @@ sub main()
 	    # How many from match a domain/IP before a switch to domain AWL
 	    domain_level    => $opt{'group-domain-level'}
 		                   || $dflt{group_domain_level},
-            last_maint      => time,
-	    db_cleandelay   => $opt{'db-cleandelay'}
-				   || $dflt{db_cleandelay}, # between table cleanups (seconds)
+            next_maint      => time + $cleandelay,
+	    db_cleandelay   => $cleandelay, # between table cleanups (seconds)
 
             db_type         => $opt{'db-type'} || $dflt{db_type},
             db_name         => $opt{'db-name'} || $dflt{db_name},

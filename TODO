@@ -5,6 +5,7 @@
   reorder PRIMARY KEY of TABLE from_awl to ip_addr, sender_domain, sender_name
   for performance (query not involving left column can't use the index)
   (up the database version to 2)
+- Don't use "#" syntax for connect entries
 
 1.4.x
 - bug with multiple connect entries matching a reconnection (only in multiple
