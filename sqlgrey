@@ -116,7 +116,7 @@ sub sendmail {
 		$self->log(2, sprintf("send mail child exited with value %d\n",
 				      $? >> 8));
 	    }
-
+	}
 	# empty bucket
 	$self->{sqlgrey}{mail_bucket}--;
     }
