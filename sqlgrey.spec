@@ -67,6 +67,14 @@ if [ $1 = 0 ]; then
 fi
 
 %changelog
+* Wed Feb 23 2005 Lionel Bouton <lionel-dev@bouton.name>
+ - 1.5.0 release
+ - drop support for obsolote command-line parameters
+ - migrate databases to a new layout :
+  . first_seen added to the AWLs
+  . optimize AWL Primary Keys
+  . add indexes
+
 * Mon Feb 21 2005 Lionel Bouton <lionel-dev@bouton.name>
  - 1.4.8 release
  - AWL performance bugfix
