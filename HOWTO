@@ -18,8 +18,9 @@ PostgreSQL : full-fledge, very mature DBRMS.
 you need the DBD::SQLite perl module (and libsqlite of course).
 
 # Howto :
-Read the man page (sqlgrey --man) and use "--db-type=SQLite --db-name=<db>"
-parameters or setup /etc/sqlgrey.conf
+Setup /etc/sqlgrey/sqlgrey.conf with
+db_type = SQLite
+db_name = <whatever_you_want_as_name>
 
 # Note :
 sqlgrey will create the file storing database data in the working
@@ -33,11 +34,13 @@ you need the DBD::MySQL perl module and a working MySQL server.
 
 # Howto :
 Create a sqlgrey database and a mysql sqlgrey user:
-sous mysql:
+with mysql:
 > CREATE DATABASE sqlgrey;
 > GRANT ALL ON sqlgrey.* TO sqlgrey@localhost;
 
-Read the man page (sqlgrey --man) and use the "--db-type=MySQL" parameter
+Setup /etc/sqlgrey/sqlgrey.conf with
+db_type = MySQL
+db_name = sqlgrey
 
 # Note :
 MySQL is really fast. I'd recommend it if you don't want to host critical
@@ -63,7 +66,7 @@ You'll have to check your pg_hba.conf file if you're not sure about
 the access control configuration. For the next step, you need to be
 able to connect as sqlgrey.
 
--bash-2.05b$ createdb -U sqlgrey x sqlgrey
+-bash-2.05b$ createdb -U sqlgrey sqlgrey
 CREATE DATABASE
 -bash-2.05b$
 
@@ -84,10 +87,8 @@ Start by adding check_policy_service after reject_unauth_destination in
                reject_unauth_destination
                check_policy_service inet:127.0.0.1:2501
 
-This assumes sqlgrey will listen on the TCP 2501 port (default).
-check_policy_service must come after reject_unauth_destination or
-you'll end up being an open-relay and listed in RBLs (you don't want
-that).
+This assumes sqlgrey will listen on the TCP 2501 port (default) and is
+on the same host.
 
 ##################
 ## Whitelisting ##
@@ -113,7 +114,7 @@ sqlgrey log line.
 If you can get a reliable domain name, put it in
 /etc/sqlgrey/clients_fqdn_whitelist.local
 do *not* touch the /etc/sqlgrey/clients_fqdn_whitelist file as it will
-be overwritten by a future sqlgrey installation.
+be overwritten by a future sqlgrey installation or update_sqlgrey_whitelists
 The top of /etc/sqlgrey/clients_fqdn_whitelist explains the expected
 formats.
 You don't need to restart sqlgrey as it monitors the ".local" files
@@ -131,14 +132,31 @@ in the corresponding .local files.
 
 You are encouraged to subscribe to the sqlgrey-users mailing-list
 (see http://lists.sourceforge.net/lists/listinfo/sqlgrey-users)
-and submit the IP address and domain names you have to add to
+and submit the IP addresses and domain names you have to add to
 your .local files to make your users happy and the reason why
 you did so (see comments on why the existing systems are added).
 
 As of 1.4.3, SQLgrey's whitelists can be updated from a central repository
 with the update_sqlgrey_whitelists script.
 update_sqlgrey_whitelists outputs on STDOUT modified entries.
-Running it from cron is a great way to be warned of new whitelist entries.
+Running it from cron is a great way to be warned of new whitelist entries
+or old entries being cleaned up.
+
+#####################
+# Warnings by email #
+#####################
+
+SQLgrey can send emails when it detects anomalies. You need to:
+- make sure the user SQLgrey runs as (should be sqlgrey) can send emails
+with the 'mail' command. use
+echo "test" | mail -s "SQLgrey test" <mailbox@a-domain.org>
+and check that the message made it through.
+- put the following line:
+admin_mail = <postmaster@yourdomain>
+in /etc/sqlgrey/sqlgrey.conf
+
+That's all. SQLgrey will make sure it doesn't flood your mailbox by
+rate-limiting the emails it sends.
 
 #################
 # RPM Packaging #
@@ -152,3 +170,11 @@ package built with the included spec file:
 - installs /etc/sqlgrey/clients_*_whitelist files
 
 What's left to you is the Postfix and Database setup.
+
+#################
+# Gentoo ebuild #
+#################
+
+The sourceforge site (http://sqlgrey.sourceforge.net/) points to the
+latest ebuild available. See http://linuxreviews.org/gentoo/ebuilds/
+for how to use it.
