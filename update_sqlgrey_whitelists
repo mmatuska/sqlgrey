@@ -42,7 +42,7 @@ fi
 # Go into a temp directory
 MYTMP=`mktemp -d ${TMPDIR:-/tmp}/sqlgrey.XXXXXX`
 [ -n "$MYTMP" -a -d "$MYTMP" ] && cd $MYTMP || {
-	echo "Error creating temporary directory;
+	echo "Error creating temporary directory"
 	exit 1
 }
 

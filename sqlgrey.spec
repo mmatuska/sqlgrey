@@ -1,5 +1,5 @@
 %define name sqlgrey
-%define ver  1.4.4
+%define ver  1.4.6
 %define rel  1
 
 Summary:   SQLgrey is a postfix grey-listing policy service.
@@ -67,6 +67,13 @@ if [ $1 = 0 ]; then
 fi
 
 %changelog
+* Thu Feb 17 2005 Lionel Bouton <lionel-dev@bouton.name>
+ - 1.4.5 release
+ - update_sqlgrey_whitelists temporary directory fixes from Michel Bouissou
+ - return code configurable patch from Michel Bouissou
+ - VERP and SRS tuning, with input from Michel Bouissou
+ - VERP and SRS normalisation is used only in the AWLs
+
 * Mon Feb 14 2005 Lionel Bouton <lionel-dev@bouton.name>
  - 1.4.4 release
  - Autowhitelists understand SRS
