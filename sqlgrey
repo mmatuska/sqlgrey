@@ -33,7 +33,7 @@ use DBI;
 use vars qw(@ISA);
 @ISA = qw(Net::Server::Multiplex);
 
-my $VERSION = "1.4.3";
+my $VERSION = "1.4.4";
 my $software = 'SQLgrey-' . "$VERSION";
 
 my $DB_VERSION = 1;
@@ -65,6 +65,7 @@ $dflt{db_pass}            = '';
 $dflt{prepend}            = 1;
 $dflt{greymethod}         = 'smart';
 $dflt{db_cleandelay}	  = 30 * 60;
+$dflt{admin_mail}         = '';
 
 # Default configuration file
 my $config_file           = '/etc/sqlgrey/sqlgrey.conf';
@@ -78,9 +79,46 @@ my $prepend = 'PREPEND X-Greylist: ';
 
 my $reload = 0; # used to signal a whitelists reload request
 
+# Send mails
+sub sendmail {
+    my $self = shift;
+    my $subject = shift;
+    my $content = shift;
+
+    system("echo $content | mail -s '$subject' $self->{sqlgrey}{admin_mail}");
+}
+
+sub mydie {
+    my $self = shift;
+    my $error = shift;
+    $self->sendmail('SQLgrey died', $error);
+    die $error;
+}
+
 ##########################
 ## Database helper subs ##
 ##########################
+
+# Trigger e-mails when the DB connection's state changes
+sub db_unavailable {
+    my $self = shift;
+
+    if ($self->{sqlgrey}{db_available}) {
+	$self->{sqlgrey}{warn_db} && $self->sendmail('SQLgrey lost DB',
+			'SQLgrey lost connection to: ' . $self->cnctinfo());
+	$self->{sqlgrey}{db_available} = 0;
+    }
+}
+
+sub db_available {
+    my $self = shift;
+
+    if (! $self->{sqlgrey}{db_available}) {
+	$self->{sqlgrey}{warn_db} && $self->sendmail('SQLgrey recovered DB',
+			'SQLgrey established connection to: ' . $self->cnctinfo());
+	$self->{sqlgrey}{db_available} = 1;
+    }
+}
 
 # fault (lost connection) tolerant do
 # allows a RDBMs restart without crash
@@ -89,18 +127,19 @@ sub do {
     my $query = shift;
     my $result;
 
-    if (!defined $self->{sqlgrey}{dbh}) {
+    if (! $self->{sqlgrey}{db_available}) {
 	$self->connectdb();
     }
     if (!defined $self->{sqlgrey}{dbh} or
 	!($result = $self->{sqlgrey}{dbh}->do($query))) {
 	# failure
+	$self->db_unavailable();
         $self->log(1, "Warning: couldn't do query:\n" .
 		   "$query:\n" .
 		   "$DBI::errstr, reconnecting to DB");
-	$self->connectdb();
 	return undef;
     } else {
+	$self->db_available();
 	return $result;
     }
 }
@@ -110,13 +149,20 @@ sub prepare_cached {
     my $self = shift;
     my $query = shift;
 
-    if (!defined $self->{sqlgrey}{dbh}) {
+    if (! $self->{sqlgrey}{db_available}) {
 	$self->connectdb();
     }
     if (!defined $self->{sqlgrey}{dbh}) {
+	$self->db_unavailable();
 	return undef;
     } else {
-	return $self->{sqlgrey}{dbh}->prepare_cached($query);
+	my $result = $self->{sqlgrey}{dbh}->prepare_cached($query);
+	if (! defined $result) {
+	    $self->db_unavailable();
+	} else {
+	    $self->db_available();
+	}
+	return $result;
     }
 }
 
@@ -161,7 +207,7 @@ sub interval {
             return $nb * 60;
         } else {
             # catch syntax errors
-            die 'interval(' . $nb . ', ' . $unit . ') for SQLite,'
+            mydie 'interval(' . $nb . ', ' . $unit . ') for SQLite,'
 		. " sqlgrey doesn't recognise $unit UNIT\n";
         }
     } else { # use PostgreSQL syntax (probably the most SQL compliant)
@@ -198,6 +244,8 @@ sub database_setup {
 	$self->create_config_table();
 	$self->setconfig('version',$DB_VERSION);
     }
+    # database errors were masked until now
+    $self->{sqlgrey}{warn_db} = 1;
 }
 
 sub getconfig {
@@ -208,12 +256,12 @@ sub getconfig {
 				    "WHERE parameter = ?");
     if (!defined $sth or !$sth->execute($param)) {
 	$self->log(1, "Error: couldn't access $config table: $DBI::errstr");
-	die "Can't continue: config table unreadable\n";
+	mydie "Can't continue: config table unreadable\n";
     }
     my $result = $sth->fetchall_arrayref();
     if ($#$result != 0) {
         $self->log(1, "Error: unexpected SQL result");
-	die "Can't continue: unexpected config table read error\n";
+	mydie "Can't continue: unexpected config table read error\n";
     } else {
         return $result->[0][0];
     }
@@ -231,7 +279,7 @@ sub setconfig {
 				    "WHERE parameter = ?");
     if (!defined $sth or !$sth->execute($param)) {
 	$self->log(1, "Error: couldn't access $config table: $DBI::errstr");
-	die "Can't continue: config table unreadable\n";
+	mydie "Can't continue: config table unreadable\n";
     }
     my $result = $sth->fetchall_arrayref();
     if ($#$result != 0) {
@@ -426,7 +474,7 @@ sub create_from_awl_table {
 	      "last_seen timestamp NOT NULL, " .
 	      "PRIMARY KEY " .
 	      "(sender_name, sender_domain, host_ip));")
-	or die "Couldn't create table $from_awl: $DBI::errstr\n";
+	or mydie "Couldn't create table $from_awl: $DBI::errstr\n";
 }
 
 sub create_domain_awl_table {
@@ -436,7 +484,7 @@ sub create_domain_awl_table {
 	      "host_ip varchar(15) NOT NULL, " .
 	      "last_seen timestamp NOT NULL, " .
 	      "PRIMARY KEY (sender_domain, host_ip));")
-	or die "Couldn't create table $from_awl: $DBI::errstr\n";
+	or mydie "Couldn't create table $from_awl: $DBI::errstr\n";
 }
 
 sub create_connect_table {
@@ -449,7 +497,7 @@ sub create_connect_table {
 	      "ip_addr varchar(15) NOT NULL, " .
 	      "rcpt varchar(255) NOT NULL, " .
 	      "first_seen timestamp NOT NULL);")
-	or die "Couldn't create table $connect: $DBI::errstr\n";
+	or mydie "Couldn't create table $connect: $DBI::errstr\n";
 }
 
 sub create_config_table {
@@ -458,7 +506,7 @@ sub create_config_table {
 	      "(parameter varchar(255) NOT NULL, " .
 	      "value varchar(255), " .
 	      "PRIMARY KEY (parameter));")
-        or die "Couldn't create table $config: $DBI::errstr\n";
+        or mydie "Couldn't create table $config: $DBI::errstr\n";
 }
 
 ##########
@@ -494,12 +542,17 @@ sub normalize_sender {
         # log : shouldn't happen
         $self->log(1, "undefined user, from is '$from'");
     }
-    # Borrowed from postgrey-1.16
-    # Note : '+' isn't the only char used for extension, but
-    # the most commonly used.
+    ## Try to match single-use addresses
+    # SRS (first and subsequent levels of forwarding)
+    $user =~ s/^SRS0=[^=]+=[^=]+=([^=]+)=([^=]+)^/SRS0=#=#=$1=$2/;
+    $user =~ s/^SRS1=[^=]+=([^=]+)=[^=]+=([^=]+)=([^=]+)^/SRS0=#=$1=#=#=$2=$3/;
     # strip extension, used sometimes for mailing-list VERP
     $user =~ s/\+.*//;
-    # VERP substitution : replace numbers with '#'
+    # strip hexadecimal sequences (doable in one regexp ?)
+    $user =~ s/([\._-])[0-9A-Fa-f]+([\._-])/$1#$2/g;
+    $user =~ s/^[0-9A-Fa-f]+([\._-])/#$1/g;
+    $user =~ s/([\._-])[0-9A-Fa-f]+$/$1#/g;
+    # Simple VERP substitution : replace numbers with '#'
     # will match VERP mailing-list message retransmissions
     $user =~ s/\b\d+\b/#/g;
     # per RFC, user should be < 64, domain < 255
@@ -585,7 +638,6 @@ sub is_in_domain_awl {
 
 sub put_in_from_awl {
     my ($self, $sender_name, $sender_domain, $host) = @_;
-    my $dbh = $self->{sqlgrey}{dbh};
 
     # delete old entries
     $self->do("DELETE FROM $from_awl " .
@@ -603,7 +655,6 @@ sub put_in_from_awl {
 
 sub put_in_domain_awl {
     my ($self, $sender_domain, $host) = @_;
-    my $dbh = $self->{sqlgrey}{dbh};
 
     # delete old entries
     $self->do("DELETE FROM $domain_awl " .
@@ -621,7 +672,6 @@ sub put_in_domain_awl {
 
 sub update_from_awl {
     my ($self, $sender_name, $sender_domain, $host) = @_;
-    my $dbh = $self->{sqlgrey}{dbh};
 
     $self->do("UPDATE $from_awl SET last_seen = NOW() " .
 	      "WHERE sender_name = " . $self->quote($sender_name) .
@@ -631,7 +681,6 @@ sub update_from_awl {
 
 sub update_domain_awl {
     my ($self, $sender_domain, $host) = @_;
-    my $dbh = $self->{sqlgrey}{dbh};
 
     $self->do("UPDATE $domain_awl SET last_seen = NOW() " .
 	      "WHERE sender_domain = " . $self->quote($sender_domain) .
@@ -687,7 +736,6 @@ sub cleanup_domain_awl {
 
 sub delete_domain_from_mail_awl {
     my ($self, $domain, $host) = @_;
-    my $dbh = $self->{sqlgrey}{dbh};
     $self->do("DELETE FROM $from_awl " .
 	      "WHERE sender_domain = " . $self->quote($domain) .
 	      " AND host_ip = " . $self->quote($host));
@@ -761,7 +809,6 @@ sub recently_in_connect {
 # add a first attempt
 sub put_in_connect {
     my ($self, $sender_name, $sender_domain, $addr, $rcpt) = @_;
-    my $dbh = $self->{sqlgrey}{dbh};
 
     # delete old entries
     $self->do("DELETE FROM $connect " .
@@ -1300,7 +1347,7 @@ sub main()
     if (defined $opt{kill}) {
 	my $pidfile = $opt{pidfile} ? $opt{pidfile} : $dflt{pidfile};
 	open(PIDFILE, '<' . $pidfile)
-	    or die "Coudn't read pidfile: $pidfile\n";
+	    or mydie "Coudn't read pidfile: $pidfile\n";
 	while (<PIDFILE>) { # should only have one pid
 	    kill 15, $_;
 	}
@@ -1370,8 +1417,11 @@ sub main()
             db_host         => $opt{'db-host'} || $dflt{db_host},
 	    db_user         => $opt{'db-user'} || $dflt{db_user},
             db_pass         => $opt{'db-pass'} || $dflt{db_pass},
+	    db_available    => 1, # used to trigger e-mails
 	    prepend         => $opt{prepend}   || $dflt{prepend},
 	    greymethod      => $opt{greymethod} || $dflt{greymethod},
+	    admin_mail      => $dflt{admin_mail},
+	    warn_db         => 0, # mask SQL errors during db init
         },
     }, 'sqlgrey';
 

@@ -25,6 +25,7 @@ manpage:
 clean:
 	rm -f sqlgrey.1
 	rm -f *~ init/*~ etc/*~
+	rm -rf .svn
 
 install: all
 	$(INSTALL) -d -m 755 $(SBINDIR)
