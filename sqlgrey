@@ -64,6 +64,7 @@ $dflt{db_user}            = 'sqlgrey';
 $dflt{db_pass}            = '';
 $dflt{prepend}            = 1;
 $dflt{greymethod}         = 'smart';
+$dflt{db_cleandelay}	  = 30 * 60;
 
 # Default configuration file
 my $config_file           = '/etc/sqlgrey/sqlgrey.conf';
@@ -1133,7 +1134,7 @@ sub smtpd_access_policy($$)
 
     # Is it time for cleanups ?
     if (time() > ($self->{sqlgrey}{last_maint} +
-		  $self->{sqlgrey}{maint_delay})
+		  $self->{sqlgrey}{db_cleandelay})
        ) {
         # $self->log(4, "Maintenance delay expired: cleanup triggered");
         $self->cleanup();
@@ -1265,11 +1266,11 @@ sub main()
     # options parsing
     my %opt = ();
     GetOptions(\%opt, 'help|h', 'man', 'version', 'configfile|f=s',
-	'verbose|v', 'quiet|q', 'debug','daemonize|d', 'inet|i=s',
+	'verbose|v', 'quiet|q', 'debug','daemonize|d', 'inet|i=i',
 	'user|u=s', 'group=s', 'pidfile|p=s', 'reconnect-delay|r=i',
         'max-connect-age|m=i', 'awl-age|a=i','group-domain-level|g=i',
         'db-type=s', 'db-name=s', 'db-host=s', 'db-user=s', 'db-pass=s',
-        'kill|k', 'prepend=i', 'greymethod=s')
+        'db-cleandelay=i', 'kill|k', 'prepend=i', 'greymethod=s')
 	or exit(1);
 
     if ($opt{help})    { help() }
@@ -1344,7 +1345,8 @@ sub main()
 	    domain_level    => $opt{'group-domain-level'}
 		                   || $dflt{group_domain_level},
             last_maint      => time,
-	    maint_delay     => 0, # How often do we clean tables (seconds)
+	    db_cleandelay   => $opt{'db-cleandelay'}
+				   || $dflt{db_cleandelay}, # between table cleanups (seconds)
 
             db_type         => $opt{'db-type'} || $dflt{db_type},
             db_name         => $opt{'db-name'} || $dflt{db_name},
@@ -1499,6 +1501,8 @@ B<sqlgrey> [I<options>...]
      --db-name=NAME         default: sqlgrey
      --db-user=USER         default: sqlgrey
      --db-pass=PASS         default: '' (empty password)
+     --db-cleandelay=N	    delay between table cleanups in seconds
+     			    (default: 1800, 30 minutes)
      --prepend=[1|0]        default: 1 (add X-Greylist: headers)
  -k, --kill                 kill a running sqlgrey
                             (identified by 'pidfile' content)
