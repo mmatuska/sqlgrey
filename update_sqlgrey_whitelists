@@ -40,13 +40,16 @@ then
 fi
 
 # Go into a temp directory
-MYTMP=`mktemp -d ${TMPDIR:/-tmp}/sqlgrey.XXXXXX`
-cd $MYTMP
+MYTMP=`mktemp -d ${TMPDIR:-/tmp}/sqlgrey.XXXXXX`
+[ -n "$MYTMP" -a -d "$MYTMP" ] && cd $MYTMP || {
+	echo "Error creating temporary directory;
+	exit 1
+}
 
 # Setup a clean exit
 clean_exit() {
-    cd /
-    rm -rf $MYTMP
+    cd ~sqlgrey
+    [ -n "$MYTMP" -a -d "$MYTMP" ] && rm -rf $MYTMP
     exit $1
 }
 trap clean_exit 2 3 15

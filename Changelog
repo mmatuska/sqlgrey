@@ -1,3 +1,5 @@
+ - temporary directory fixes from Michel Bouissou
+
 * Mon Feb 14 2005 Lionel Bouton <lionel-dev@bouton.name>
  - 1.4.4 release
  - Autowhitelists understand SRS
