@@ -1331,6 +1331,7 @@ sub main()
             syslog_facility => 'mail',
             syslog_logsock  => 'unix',
             syslog_ident    => 'sqlgrey',
+	    syslog_logopt   => '',
         },
         sqlgrey => {
 	    # min time before reconnect (min)
