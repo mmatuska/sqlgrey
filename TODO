@@ -2,9 +2,13 @@
 - allow distributing whitelists from a central point
  . reload whitelists on SIGUSR1
  . separate script which updates the whitelist and calls SIGUSR1
+- move sqlgrey into /usr/sbin
+- bug with multiple connect entries matching a reconnection (only in multiple
+  SQLgrey instances configs) to fix
 - send mails (adjustable rate) to postmaster when the database goes down and comes back
 - make maint_delay configurable
-
+- create a stress-testing suite (for performance/reliability tests)
+  
 1.5.x
 - use time units everywhere to make configuration easier
 - experiment with SPF support
@@ -12,6 +16,9 @@
   else code it in SQLgrey)
 - support migrating from another greylister by calling it to learn its auto-whitelists
 - external cleanup process/experiment with an adaptative cleanup algorithm
-
+- check if permission related SQL errors are catchable
+- try to exit with a proper error code when database is unavailable or the user doesn't
+  have enough rights to access the pid-file
+    
 As soon as available...
 - gather enough perf data to decide on indices to add
