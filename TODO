@@ -1,25 +1,18 @@
-1.5.x
-- uniform ip_addr column name,
-  add index on ip_addr in connect table
-  add first_seen in from_awl and domain_awl
-  reorder PRIMARY KEY of TABLE from_awl to ip_addr, sender_domain, sender_name
-  for performance (query not involving left column can't use the index)
-  (up the database version to 2)
+- don't use now() in WHERE clauses: hurts perf at least on PostgreSQL
 - bug with multiple connect entries matching a reconnection (only in multiple
-  SQLgrey instances configs) to fix
-- create a stress-testing suite (for performance/reliability tests)
-- make SQLgrey return value configurable
-- use time units everywhere to make configuration easier
-- experiment with SPF support
-- switch from log level to log categories
+  SQLgrey instances configs and in a rare race condition) to fix
+  -> accept multiple connect entries in "in_connect(), recently_in_connect()"
+  -> remove the delete in "put_in_connect"
 - external cleanup process/experiment with an adaptative cleanup algorithm
+- switch from log level to log categories
+- add an utility for statistics (reading the logs)
+- create a stress-testing suite (for performance/reliability tests)
+- use time units everywhere to make configuration easier
 - check if permission related SQL errors are catchable
-- try to exit with a proper error code when database is unavailable or the user doesn't
-  have enough rights to access the pid-file
+- try to exit with a proper error code when database is unavailable or the user
+  doesn't have enough rights to access the pid-file
 - consider optin/optout (is it easy to do with Postfix? Then provide an HOWTO
   else code it in SQLgrey)
 - add sender e-mail based whitelist with huge warnings
+- experiment with SPF support
 - support migrating from another greylister by calling it to learn its auto-whitelists
-
-As soon as available...
-- gather enough perf data to decide on indices to add
