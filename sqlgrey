@@ -579,12 +579,12 @@ sub normalize_sender {
     ## Try to match single-use addresses
     # SRS (first and subsequent levels of forwarding)
     $user =~ s/^SRS0=[^=]+=[^=]+=([^=]+)=([^=]+)^/SRS0=#=#=$1=$2/;
-    $user =~ s/^SRS1=[^=]+=([^=]+)=[^=]+=([^=]+)=([^=]+)^/SRS0=#=$1=#=#=$2=$3/;
+    $user =~ s/^SRS1=[^=]+=([^=]+)=[^=]+=([^=]+)=([^=]+)$/SRS1=#=$1=#=#=$2=$3/;
     # strip extension, used sometimes for mailing-list VERP
     $user =~ s/\+.*//;
     # strip hexadecimal sequences (doable in one regexp ?)
     $user =~ s/([\._-])[0-9A-Fa-f]+([\._-])/$1#$2/g;
-    $user =~ s/^[0-9A-Fa-f]+([\._-])/#$1/g;
+    #$user =~ s/^[0-9A-Fa-f]+([\._-])/#$1/g;
     $user =~ s/([\._-])[0-9A-Fa-f]+$/$1#/g;
     # Simple VERP substitution : replace numbers with '#'
     # will match VERP mailing-list message retransmissions
