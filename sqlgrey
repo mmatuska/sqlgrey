@@ -675,7 +675,7 @@ sub main()
             last_maint      => time,
 	    maint_delay     => 86400, # everyday cleanup all tables
  	    # TODO move into conf
-            db_type         => $opt{'db-type'} || "mysql",
+            db_type         => $opt{'db-type'} || "Pg",
             db_name         => $opt{'db-name'} || "sqlgrey",
             db_host         => $opt{'db-host'} || "localhost",
 	    db_user         => $opt{'db-user'} || "sqlgrey",
@@ -772,22 +772,24 @@ B<sqlgrey> [I<options>...]
  -v, --verbose              increase verbosity level
 
  -u, --unix=PATH            listen on unix socket PATH
- -i, --inet=[HOST:]PORT     listen on PORT, localhost if HOST is not specified
- -a, --awl-age=N            connection is valid N days in auto-white-list (default: 60)
- -g, --group-domain-level=N if N email adresses from the same IP and the same domain
-                            are in AWL, the whole domain is put in AWL, 0 disables
-                            (default: 2)
+ -i, --inet=[HOST:]PORT     listen on PORT, localhost if HOST is not
+                            specified
+ -a, --awl-age=N            connection is valid N days in auto-white-list
+                            (default: 60)
+ -g, --group-domain-level=N if N email adresses from the same IP and the
+                            same domain are in AWL, the whole domain is
+                            put in AWL, 0 disables (default: 2)
  -d, --daemonize            run in the background
      --pidfile=PATH         put daemon pid into this file
      --user=USER            run as USER (default: sqlgrey)
-     --reconnect-delay=N    greylist (refuse mail) for N minutes after first connection
-                            (default: 5)
-     --max-connect-age=N    mail transfer attempt is forgotten N hours after
-                            (default: 12)
+     --reconnect-delay=N    greylist (refuse mail) for N minutes after
+                            first connection (default: 5)
+     --max-connect-age=N    mail transfer attempt is forgotten N hours
+                            after (default: 12)
      --db-type=TYPE         DBD driver to use (mysql and Pg are tested,
-                            Pg advised for functionnality (manual net whitelist)
-                            mysql advised for raw performance with MyIsam tables
-                            (default: mysql)
+                            Pg advised for functionnality (manual net
+                            whitelist) mysql advised for raw performance
+                            with MyIsam tables (default: Pg)
      --db-host=HOSTNAME     default: localhost
      --db-name=NAME         default: sqlgrey
      --db-user=USER         default: sqlgrey
@@ -797,31 +799,31 @@ B<sqlgrey> [I<options>...]
 
 Sqlgrey is a Postfix policy server implementing greylisting.
 
-When a request for delivery of a mail is received by Postfix via SMTP, the
-triplet C<CLIENT_IP> / C<SENDER> / C<RECIPIENT> is built. If it is the first
-time that this triplet is seen, or if the triplet was first seen less than
-I<reconnect-delay> seconds (300 is the default), then the mail gets rejected
-with a temporary error. Hopefully spammers or viruses will not try again later,
-as it is however required per RFC.
+When a request for delivery of a mail is received by Postfix via SMTP,
+the triplet C<CLIENT_IP> / C<SENDER> / C<RECIPIENT> is built. If it is
+the first time that this triplet is seen, or if the triplet was first
+seen less than I<reconnect-delay> seconds (300 is the default), then
+the mail gets rejected with a temporary error. Hopefully spammers or
+viruses will not try again later, as it is however required per RFC.
 
-In order to alleviate the reconnect delay, sqlgrey uses a 2-level auto-white-list
-(AWL) system:
+In order to alleviate the reconnect delay, sqlgrey uses a 2-level
+auto-white-list (AWL) system:
 
 =over 4
 
 =item *
 
-As soon as a C<CLIENT IP> / C<SENDER> is accepted, it is added to an AWL.
-The couple expires when it isn't seen for more than I<awl-age> days
-(60 is the default).
+As soon as a C<CLIENT IP> / C<SENDER> is accepted, it is added to an
+AWL. The couple expires when it isn't seen for more than I<awl-age>
+days (60 is the default).
 
 =item *
 
-If I<group-domain-level> C<SENDER>s (2 is the default) from the same domain or
-more use the same C<CLIENT IP>, another AWL is used based on a
+If I<group-domain-level> C<SENDER>s (2 is the default) from the same
+domain or more use the same C<CLIENT IP>, another AWL is used based on a
 C<CLIENT IP> / C<DOMAIN> couple.
-This couple expires after awl-age days too. This AWL is meant to be used on
-high throughput sites in order to :
+This couple expires after awl-age days too. This AWL is meant to be used
+on high throughput sites in order to :
 
 =over 4
 
@@ -835,8 +837,8 @@ minimize the amount of processing required to find an entry in the AWL.
 
 =item * 
 
-don't impose any further mail delay when a C<CLIENT IP> / C<DOMAIN> couple is
-known.
+don't impose any further mail delay when a C<CLIENT IP> / C<DOMAIN>
+couple is known.
 
 =back
 
@@ -847,24 +849,27 @@ It can be disabled by setting I<group-domain-level> to 0.
 General idea:
 
 When a SMTP client has been accepted once, if the IP isn't dynamic,
-greylisting the IP again is only a waste of time when it sends another e-mail.
-As we already know that this IP runs an RFC-compliant MTA (at least the 4xx error
-code handling) and will get the new e-mail through anyway. 
+greylisting the IP again is only a waste of time when it sends another
+e-mail. As we already know that this IP runs an RFC-compliant MTA (at
+least the 4xx error code handling) and will get the new e-mail through
+anyway. 
 
-In the case of mail relays, these AWLs works very well as the same senders
-and mail domains are constantly coming through the same IP addresses -E<gt> the
-e-mails are quickly accepted on the first try.
-In the case of individual SMTP servers, this works well if the IP is fixed too.
-When using a floating IP address, the AWLs are defeated, but it should be the
-least common case by far.
+In the case of mail relays, these AWLs works very well as the same
+senders and mail domains are constantly coming through the same IP
+addresses -E<gt> the e-mails are quickly accepted on the first try.
+In the case of individual SMTP servers, this works well if the IP is
+fixed too.
+When using a floating IP address, the AWLs are defeated, but it should
+be the least common case by far.
 
-Why do we put the domain in the AWL and not the IP only ? If we did only store IP
-addresses, polluting the AWL would be far too easy. It would only take one correctly
-configured MTA sending one e-mail from one IP one single time to put it in a
-whitelist used whatever future mails from this IP look like.
+Why do we put the domain in the AWL and not the IP only ? If we did
+only store IP addresses, polluting the AWL would be far too easy. It
+would only take one correctly configured MTA sending one e-mail from
+one IP one single time to put it in a whitelist used whatever future
+mails from this IP look like.
 
-With this AWL system, one single mail can only allow whitelisting of mails from a
-single sender from the same IP...
+With this AWL system, one single mail can only allow whitelisting of
+mails from a single sender from the same IP...
 
 =head1 INSTALLATION
 
@@ -876,7 +881,8 @@ Create a C<sqlgrey> user
 
 =item *
 
-Write an init script to start sqlgrey at boot and start it. Like this for example:
+Write an init script to start sqlgrey at boot and start it. Like this
+for example:
 
  sqlgrey --inet=10023 -d
 
@@ -900,8 +906,9 @@ Start by adding check_policy_service after reject_unauth_destination in
 
 =item *
 
-Be aware that some servers do not behave correctly and do not resend mails (as
-required in the standard) or use complicated unique return addresses.
+Be aware that some servers do not behave correctly and do not resend
+mails (as required in the standard) or use complicated unique return
+addresses.
 This is the reason why you should maintain whitelists for them. 
 
 =back
@@ -912,8 +919,8 @@ This is the reason why you should maintain whitelists for them.
 
 =item *
 
-If you use PostgreSQL, then sqlgrey supports manual whitelisting. Simply add
-networks to the net_whitelist table :
+If you use PostgreSQL, then sqlgrey supports manual whitelisting. Simply
+add networks to the net_whitelist table :
 
 =over 2
 
@@ -933,17 +940,18 @@ psql> INSERT INTO net_whitelist (ip_net) VALUES ('193.43.57.0/24');
 
 If you don't use PosgreSQL, you can't use the net_whitelist table to add
 trusted networks, you'll have to use whitelisting at postfix's level.
-An example sqlgrey_client_access file is provided, you must put it in /etc/postfix
-and postmap it.
+An example sqlgrey_client_access file is provided, you must put it in
+/etc/postfix and postmap it.
 
 Then you need to configure postfix to use the whitelist file.
-Edit /etc/main.cf and insert check_client_access in smtpd_recipient_restrictions :
+Edit /etc/main.cf and insert check_client_access in
+smtpd_recipient_restrictions :
 
  smtpd_recipient_restrictions =
-               ...
-               reject_unauth_destination
-               check_client_access    hash:/etc/postfix/sqlgrey_client_access
-               check_policy_service inet:127.0.0.1:10023
+       ...
+       reject_unauth_destination
+       check_client_access    hash:/etc/postfix/sqlgrey_client_access
+       check_policy_service inet:127.0.0.1:10023
 
 Simply remove the check_client_access line if you don't need it.
 
@@ -959,17 +967,17 @@ another file, users that do not want greylisting are listed  like this:
 
 Then you'll add a check_recipient_access in main.cf:
  smtpd_recipient_restrictions =
-               ...
-               reject_unauth_destination
-               check_client_access    hash:/etc/postfix/sqlgrey_client_access
-               check_recipient_access hash:/etc/postfix/sqlgrey_recipient_access
-               check_policy_service inet:127.0.0.1:10023
+       ...
+       reject_unauth_destination
+       check_client_access    hash:/etc/postfix/sqlgrey_client_access
+       check_recipient_access hash:/etc/postfix/sqlgrey_recipient_access
+       check_policy_service inet:127.0.0.1:10023
 
 =head1 SEE ALSO
 
-See L<http://www.greylisting.org/> for a description of what greylisting is
-and L<http://www.postfix.org/SMTPD_POLICY_README.html> for a description of how
-Postfix policy servers work.
+See L<http://www.greylisting.org/> for a description of what greylisting
+is and L<http://www.postfix.org/SMTPD_POLICY_README.html> for a
+description of how Postfix policy servers work.
 
 =head1 COPYRIGHT
 
@@ -997,15 +1005,18 @@ S<Lionel Bouton E<lt>lionel-dev@bouton.nameE<gt>>
 
 =head1 HISTORY
 
- 2004-08-07 lionel: v1.01 bug fix for space trimming
- 2004-08-03 lionel: v1.01 trim spaces before logging possible spams 
+ 2004-09-14 lionel: v1.0.1 manual formatting
+ 2004-09-07 lionel: pushed default max-age from 12 to 24 hours
+ 2004-08-07 lionel: v1.0.1 bug fix for space trimming
+ 2004-08-03 lionel: v1.0.1 trim spaces before logging possible spams 
  2004-08-03 lionel: v1.0 added license reference at the top
                     included in a more packaged release
  2004-07-30 lionel: Bugfix: couldn't match on undefined sender
             debug code added
  2004-07-30 lionel: Removed NetAddr::IP dependency
  2004-07-17 lionel: Default max-age pushed to 12 hours instead of 5
-            (witnessed more than 6 hour fors a mailing-list subscription system)
+            (witnessed more than 6 hour fors a mailing-list subscription
+             system)
  2004-07-02 lionel: Documentation
  2004-06-31 lionel: PostgreSQL support added
  2004-06-29 lionel: various cleanups and bug hunting
