@@ -6,7 +6,9 @@
 1.4.x
 - uniform ip_addr column name,
   add index on ip_addr in connect table
-  and add first_seen in from_awl and domain_awl
+  add first_seen in from_awl and domain_awl
+  reorder PRIMARY KEY of TABLE from_awl to ip_addr, sender_domain, sender_name
+  for performance (query not involving left column can't use the index)
   (up the database version to 2)
 - bug with multiple connect entries matching a reconnection (only in multiple
   SQLgrey instances configs) to fix
@@ -23,6 +25,7 @@
   have enough rights to access the pid-file
 - consider optin/optout (is it easy to do with Postfix? Then provide an HOWTO
   else code it in SQLgrey)
+- add sender e-mail based whitelist with huge warnings
 - support migrating from another greylister by calling it to learn its auto-whitelists
 
 As soon as available...
