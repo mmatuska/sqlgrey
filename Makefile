@@ -1,7 +1,7 @@
 INSTALL = install -C
 ETCDIR = $(ROOTDIR)/etc
 SYSCONFDIR = $(ETCDIR)/sysconfig
-BINDIR = $(ROOTDIR)/bin
+BINDIR = $(ROOTDIR)/usr/bin
 INITDIR = $(ETCDIR)/init.d
 MANDIR = $(ROOTDIR)/usr/share/man/man1
 

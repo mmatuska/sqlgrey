@@ -423,7 +423,7 @@ sub in_connect {
     my $query = "SELECT 1 FROM $connect " .
         	"WHERE sender_name = ? AND sender_domain = ? AND ip_addr = ? AND rcpt = ? " .
 		"AND first_seen BETWEEN now() - " . $self->interval($self->{sqlgrey}{max_connect_age}, "HOUR") .
-		"AND now() - " . $self->interval($self->{sqlgrey}{reconnect_delay}, "MINUTE");
+		" AND now() - " . $self->interval($self->{sqlgrey}{reconnect_delay}, "MINUTE");
     my $sth = $dbh->prepare($query);
     if (!$sth->execute($sender_name, $sender_domain, $addr, $rcpt)) {
         $self->log(2, "Error: couldn't access $connect table: $!");
