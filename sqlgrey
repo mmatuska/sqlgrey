@@ -84,8 +84,38 @@ sub sendmail {
     my $self = shift;
     my $subject = shift;
     my $content = shift;
+    my $now = time;
 
-    system("echo $content | mail -s '$subject' $self->{sqlgrey}{admin_mail}");
+    # this code throttles the message rate
+    # fill bucket
+    $self->{sqlgrey}{mail_bucket} += ($now - $self->{sqlgrey}{last_mail})/
+	(60*$self->{sqlgrey}{mail_period});
+    $self->{sqlgrey}{last_mail} = $now;
+    # but no more than its capacity
+    $self->{sqlgrey}{mail_bucket} = $self->{sqlgrey}{mail_bucket} < $self->{sqlgrey}{mail_maxbucket} ?
+	$self->{sqlgrey}{mail_bucket} : $self->{sqlgrey}{mail_maxbucket};
+
+    $self->log(4, "mail_bucket: $self->{sqlgrey}{mail_bucket}");
+    # is there room for a mail ?
+    if ($self->{sqlgrey}{mail_bucket} >= 1) {
+	if ($self->{sqlgrey}{mail_bucket} < 2) {
+	    $content .= " (max warn message rate hit, throttling)";
+	}
+
+        # actual mail sending
+        system("echo '$content' | mail -s '$subject' $self->{sqlgrey}{admin_mail}");
+        if ($? == -1) {
+            $self->log(2, "failed to send mail: $!\n");
+        } elsif ($? & 127) {
+            $self->log(2, sprintf("send mail child died with signal %d, %s coredump\n",
+				  ($? & 127),  ($? & 128) ? 'with' : 'without'));
+        } else {
+            $self->log(2, sprintf("send mail child exited with value %d\n", $? >> 8));
+        }
+
+	# empty bucket
+	$self->{sqlgrey}{mail_bucket}--;
+    }
 }
 
 sub mydie {
@@ -598,9 +628,11 @@ sub is_in_from_awl {
 						    "DAY")
 				   );
     if (!defined $sth or !$sth->execute($sender_name, $sender_domain, $host)) {
+	$self->db_unavailable();
 	$self->log(1, "Error: couldn't access $from_awl table: $DBI::errstr");
-	$self->connectdb();
         return 1; # in doubt, accept
+    } else {
+	$self->db_available();
     }
     my $result = $sth->fetchall_arrayref();
     if ($#$result != 0) {
@@ -622,9 +654,11 @@ sub is_in_domain_awl {
 						    "DAY")
 				   );
     if (!defined $sth or !$sth->execute($sender_domain, $host)) {
+	$self->db_unavailable();
 	$self->log(1, "Error: couldn't access $domain_awl table: $DBI::errstr");
-	$self->connectdb();
         return 1; # in doubt, accept
+    } else {
+	$self->db_available();
     }
     my $result = $sth->fetchall_arrayref();
     if ($#$result != 0) {
@@ -694,9 +728,11 @@ sub count_from_awl {
     my $sth = $self->prepare_cached("SELECT COUNT(*) FROM $from_awl " .
 				    "WHERE sender_domain = ? AND host_ip = ?");
     if (!defined $sth or !$sth->execute($sender_domain, $host)) {
+	$self->db_unavailable();
 	$self->log(1, "Error: couldn't access $from_awl table: $DBI::errstr");
-	$self->connectdb();
         return 0; # do as if table is empty
+    } else {
+	$self->db_available();
     }
 
     my $result = $sth->fetchall_arrayref();
@@ -769,9 +805,11 @@ sub in_connect {
 				"MINUTE");
     my $sth = $self->prepare_cached($query);
     if (!defined $sth or !$sth->execute($sender_name, $sender_domain, $addr, $rcpt)) {
+	$self->db_unavailable();
         $self->log(1, "Error: couldn't access $connect table: $DBI::errstr");
-	$self->connectdb();
         return 1; # in doubt, accept
+    } else {
+	$self->db_available();
     }
     my $result = $sth->fetchall_arrayref();
     if ($#$result != 0) {
@@ -794,9 +832,11 @@ sub recently_in_connect {
 				"MINUTE");
     my $sth = $self->prepare_cached($query);
     if (!defined $sth or !$sth->execute($sender_name, $sender_domain, $addr, $rcpt)) {
+	$self->db_unavailable();
         $self->log(1, "Error: Couldn't access $connect table: $DBI::errstr");
-	$self->connectdb();
         return 0; # in doubt, accept
+    } else {
+	$self->db_available();
     }
     my $result = $sth->fetchall_arrayref();
     if ($#$result != 0) {
@@ -843,8 +883,11 @@ sub get_reconnect_delay {
 	      "AND ip_addr = ? AND rcpt = ?";
     my $sth = $self->prepare_cached($query);
     if (!defined $sth or !$sth->execute($sender_name, $sender_domain, $addr, $rcpt)) {
+	$self->db_unavailable();
         $self->log(1, "Error: couldn't get reconnect delay: $DBI::errstr");
         return "sql error";
+    } else {
+	$self->db_available();
     }
     my $result = $sth->fetchall_arrayref();
     if ($#$result != 0) {
@@ -880,6 +923,7 @@ sub cleanup_connect {
                     $self->interval($max_connect_age, "HOUR");
         my $sth = $self->prepare_cached($query);
         if (defined $sth and $sth->execute()) {
+	    $self->db_available();
 	    my $result = $sth->fetchall_arrayref();
 	    for my $spam (@{$result}) {
 	        $self->log(2, "Probable spam: $$spam[2]: " .
@@ -887,8 +931,8 @@ sub cleanup_connect {
 		           "$$spam[3] at $$spam[4]");
 	    }
         } else {
+	    $self->db_available();
 	    $self->log(1, "Error: couldn't list detected spam attempts");
-	    $self->connectdb();
         }
     }
     my $rows = $self->do("DELETE FROM $connect " .
@@ -1422,6 +1466,10 @@ sub main()
 	    greymethod      => $opt{greymethod} || $dflt{greymethod},
 	    admin_mail      => $dflt{admin_mail},
 	    warn_db         => 0, # mask SQL errors during db init
+	    mail_maxbucket  => 10, # max burst of mails
+	    mail_period     => 10, # one mail each 10 minutes max
+	    mail_bucket     => 5, # initial bucket
+	    last_mail       => time,
         },
     }, 'sqlgrey';
 
