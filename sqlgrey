@@ -33,32 +33,35 @@ use DBI;
 use vars qw(@ISA);
 @ISA = qw(Net::Server::Multiplex);
 
-my $VERSION='1.2.0';
+my $VERSION='1.3.0';
+
+my $DB_VERSION = 1;
 
 # Table names
-my $connect       = "connect";
-my $from_awl      = "from_awl";
-my $domain_awl    = "domain_awl";
-my $net_whitelist = "net_whitelist";
+my $connect       = 'connect';
+my $from_awl      = 'from_awl';
+my $domain_awl    = 'domain_awl';
+my $net_whitelist = 'net_whitelist';
+my $config        = 'config';
 
 # defaults
 my %dflt;
 $dflt{verbose}            = 0;
-$dflt{user}               = "sqlgrey";
-$dflt{inet}               = "2501";
-$dflt{pidfile}            = "/var/run/sqlgrey.pid";
+$dflt{user}               = 'sqlgrey';
+$dflt{inet}               = '2501';
+$dflt{pidfile}            = '/var/run/sqlgrey.pid';
 $dflt{reconnect_delay}    = 5;            # 5 minutes
 $dflt{max_connect_age}    = 24;           # 24 hours
 $dflt{awl_age}            = 60;           # 60 days
 $dflt{group_domain_level} = 2;            # 2 e-mail addr from same domain/IP
-$dflt{db_type}            = "Pg";
-$dflt{db_name}            = "sqlgrey";
-$dflt{db_host}            = "localhost";
-$dflt{db_user}            = "sqlgrey";
-$dflt{db_pass}            = "";
+$dflt{db_type}            = 'Pg';
+$dflt{db_name}            = 'sqlgrey';
+$dflt{db_host}            = 'localhost';
+$dflt{db_user}            = 'sqlgrey';
+$dflt{db_pass}            = '';
 
 # Default configuration file
-my $config_file           = "/etc/sqlgrey.conf";
+my $config_file           = '/etc/sqlgrey/sqlgrey.conf';
 
 ##########################
 ## Database helper subs ##
@@ -94,12 +97,6 @@ sub table_exists {
     return 1;
 }
 
-# RDBMS supporting inet type used in net_whitelist
-sub db_supports_inet {
-    my $self = shift;
-    return ($self->{sqlgrey}{db_type}) eq "Pg" ? 1 : 0;
-}
-
 # INTERVAL syntax is platform dependant
 sub interval {
     my ($self, $nb, $unit) = @_;
@@ -107,17 +104,17 @@ sub interval {
     if ($db_type eq "mysql") {
 	# MySQL doesn't want any ' char
         return "INTERVAL $nb $unit";
-    } elsif ($db_type eq "SQLite") {
+    } elsif ($db_type eq 'SQLite') {
 	# SQLite doesn't recognise INTERVAL
-        if ($unit eq "DAY") {
+        if ($unit eq 'DAY') {
             return $nb * 24 * 60 * 60;
-        } elsif ($unit eq "HOUR") {
+        } elsif ($unit eq 'HOUR') {
             return $nb * 60 * 60;
-        } elsif ($unit eq "MINUTE") {
+        } elsif ($unit eq 'MINUTE') {
             return $nb * 60;
         } else {
             # catch syntax errors
-            die "interval(" . $nb . ", " . $unit . ") for SQLite,"
+            die 'interval(' . $nb . ', ' . $unit . ') for SQLite,'
 		. " sqlgrey doesn't recognise $unit UNIT\n";
         }
     } else { # use PostgreSQL syntax (probably the most SQL compliant)
@@ -129,20 +126,187 @@ sub interval {
 sub database_setup {
     my $self = shift;
 
+    my $wasempty = 1;
+    my $wasfull = 1;
     if (! $self->table_exists("$from_awl")) {
 	$self->create_from_awl_table();
-    }
+	$wasfull = 0; } else { $wasempty = 0; }
     if (! $self->table_exists("$domain_awl")) {
 	$self->create_domain_awl_table();
-    }
+	$wasfull = 0; } else { $wasempty = 0; }
     if (! $self->table_exists("$connect")) {
 	$self->create_connect_table();
+	$wasfull = 0; } else { $wasempty = 0, }
+
+    if ($self->currentdbversion($wasempty) < $DB_VERSION) {
+	$self->log(2, "Upgrading database from " .
+		   $self->currentdbversion($wasempty) . " to " .
+		   $DB_VERSION);
+	$self->upgradedb();
     }
-    if ($self->db_supports_inet()) {
-        if (! $self->table_exists("$net_whitelist")) {
-            $self->create_net_whitelist_table();
-        }
+
+    if (! $self->table_exists("$config")) {
+	$self->create_config_table();
     }
+}
+
+sub getconfig {
+    my $self = shift;
+    my $param = shift;
+
+    my $sth = $self->{sqlgrey}{dbh}->prepare(
+		     "SELECT value FROM $config " .
+		     "WHERE parameter = ?");
+    if (!$sth->execute($param)) {
+	$self->log(2, "Error: couldn't access $config table: $DBI::errstr");
+	die "Can't continue: config table unreadable\n";
+    }
+    my $result = $sth->fetchall_arrayref();
+    if ($#$result != 0) {
+        $self->log(2, "Error: unexpected SQL result");
+	die "Can't continue: unexpected config table read error\n";
+    } else {
+        return $result->[0][0];
+    }
+}
+
+sub setconfig {
+    my $self = shift;
+    my $param = shift;
+    my $value = shift;
+
+    my $sth = $self->{sqlgrey}{dbh}->prepare(
+		     "SELECT value FROM $config " .
+		     "WHERE parameter = ?");
+    if (!$sth->execute($param)) {
+	$self->log(2, "Error: couldn't access $config table: $DBI::errstr");
+	die "Can't continue: config table unreadable\n";
+    }
+    my $result = $sth->fetchall_arrayref();
+    if ($#$result != 0) {
+	# not a single value (should mean no value, not multiple ones)
+	$self->insertconfig($param, $value);
+    } else {
+	$self->updateconfig($param, $value);
+    }
+}
+
+sub updateconfig {
+    my $self = shift;
+    my $param = shift;
+    my $value = shift;
+    my $dbh = $self->{sqlgrey}{dbh};
+
+    $self->do("UPDATE $config SET value = " .
+	      $dbh->quote($value) .
+	      " WHERE parameter = " .
+	      $dbh->quote($param));
+}
+
+sub insertconfig() {
+    my $self = shift;
+    my $param = shift;
+    my $value = shift;
+    my $dbh = $self->{sqlgrey}{dbh};
+
+    $self->do("INSERT INTO $config (parameter, value) VALUES(" .
+	      $dbh->quote($param) . "," .
+	      $dbh->quote($value) . ")");
+}
+
+sub currentdbversion() {
+    my $self = shift;
+    my $wasempty = shift;
+
+    # Empty DB -> it is created with current version
+    if ($wasempty) {
+	return $DB_VERSION;
+    }
+
+    # No config table -> version 0
+    if (! $self->table_exists("$config")) {
+	return 0;
+    }
+
+    # Common case: read from config table
+    return getconfig('version');
+}
+
+sub upgradedb() {
+    my $self = shift;
+    my $currentdbver = $self->currentdbversion();
+    while ($currentdbver < $DB_VERSION) {
+	$self->upgrade($currentdbver);
+	$currentdbver++;
+    }
+}
+
+sub upgrade() {
+    my $self = shift;
+    my $ver = shift;
+    if ($ver eq 0) {
+	$self->upgrade0();
+    }
+}
+
+sub upgrade0() {
+    my $self = shift;
+    my $db_type = $self->{sqlgrey}{db_type};
+    if ($db_type ne "SQLite") {
+	# 0 -> 1 : char to varchar
+	# rename current table and dump content into new ones
+
+	# connect
+	$self->log(2, "CHAR -> VARCHAR in $connect table");
+	$self->do("ALTER TABLE $connect RENAME TO $connect" . "old");
+	$self->create_connect_table();
+	$self->do("INSERT INTO $connect (sender_name, sender_domain, " .
+		  "ip_addr, rcpt, first_seen) " .
+		  "SELECT sender_name, sender_domain, ip_addr, " .
+		  "rcpt, first_seen " .
+		  "FROM $connect" . "old");
+	$self->do("DROP TABLE $connect" . "old");
+
+	# from_awl
+	$self->log(2, "CHAR -> VARCHAR in $from_awl table");
+	$self->do("ALTER TABLE $from_awl RENAME TO $from_awl" . "old");
+	if ($db_type eq "Pg") {
+	    # we need to remove the pkey constraint
+	    $self->do("ALTER TABLE $from_awl" . "old DROP CONSTRAINT " .
+		      "from_awl_pkey");
+	}
+	$self->create_from_awl_table();
+	$self->do("INSERT INTO $from_awl (sender_name, sender_domain, " .
+		  "host_ip, last_seen) " .
+		  "SELECT sender_name, sender_domain, host_ip, last_seen " .
+		  "FROM $from_awl" . "old");
+	$self->do("DROP TABLE $from_awl" . "old");
+
+	# domain_awl
+	$self->log(2, "CHAR -> VARCHAR in $domain_awl table");
+	$self->do("ALTER TABLE $domain_awl RENAME TO $domain_awl" . "old");
+	if ($db_type eq "Pg") {
+	    # we need to remove the pkey constraint
+	    $self->do("ALTER TABLE $domain_awl" . "old DROP CONSTRAINT " .
+		      "domain_awl_pkey");
+	}
+	$self->create_domain_awl_table();
+	$self->do("INSERT INTO $domain_awl (sender_domain, host_ip, " .
+		  "last_seen) " .
+		  "SELECT sender_domain, host_ip, last_seen " .
+		  "FROM $domain_awl" . "old");
+	$self->do("DROP TABLE $domain_awl" . "old");
+
+	# net_whitelist not needed anymore
+	if ($self->table_exists("net_whitelist")) {
+	    $self->do("DROP TABLE net_whitelist");
+	}
+    } else {
+	$self->log(2, "SQLite treats VARCHAR and CHAR the same, " .
+		   "no upgrade needed");
+    }
+    $self->create_config_table();
+    $self->setconfig('version','1');
 }
 
 # Build a connect string for DBI
@@ -199,9 +363,9 @@ sub initdb {
 sub create_from_awl_table {
     my $self = shift;
     $self->{sqlgrey}{dbh}->do("CREATE TABLE $from_awl " .
-			      "(sender_name char(64) NOT NULL, " .
-			      "sender_domain char(255) NOT NULL, " .
-			      "host_ip char(15) NOT NULL, " .
+			      "(sender_name varchar(64) NOT NULL, " .
+			      "sender_domain varchar(255) NOT NULL, " .
+			      "host_ip varchar(15) NOT NULL, " .
 			      "last_seen timestamp NOT NULL, " .
 			      "PRIMARY KEY " .
 			      "(sender_name, sender_domain, host_ip));")
@@ -211,8 +375,8 @@ sub create_from_awl_table {
 sub create_domain_awl_table {
     my $self = shift;
     $self->{sqlgrey}{dbh}->do("CREATE TABLE $domain_awl " .
-			      "(sender_domain char(255) NOT NULL, " .
-			      "host_ip char(15) NOT NULL, " .
+			      "(sender_domain varchar(255) NOT NULL, " .
+			      "host_ip varchar(15) NOT NULL, " .
 			      "last_seen timestamp NOT NULL, " .
 			      "PRIMARY KEY (sender_domain, host_ip));")
 	or die "Couldn't create table $from_awl: $DBI::errstr\n";
@@ -223,20 +387,22 @@ sub create_connect_table {
     # Note: no primary key, Mysql can't handle 500+ byte primary keys
     # connect should not become big enough to make it a problem
     $self->{sqlgrey}{dbh}->do("CREATE TABLE $connect " .
-			      "(sender_name char(64) NOT NULL, " .
-			      "sender_domain char(255) NOT NULL, " .
-			      "ip_addr char(15) NOT NULL, " .
-			      "rcpt char(255) NOT NULL, " .
+			      "(sender_name varchar(64) NOT NULL, " .
+			      "sender_domain varchar(255) NOT NULL, " .
+			      "ip_addr varchar(15) NOT NULL, " .
+			      "rcpt varchar(255) NOT NULL, " .
 			      "first_seen timestamp NOT NULL);")
 	or die "Couldn't create table $connect: $DBI::errstr\n";
 }
 
-sub create_net_whitelist_table {
+sub create_config_table {
     my $self = shift;
-    $self->{sqlgrey}{dbh}->do("CREATE TABLE $net_whitelist " .
-			      "(net inet NOT NULL, " .
-			      "PRIMARY KEY (net));")
-        or die "Couldn't create table $connect: $DBI::errstr\n";
+    $self->{sqlgrey}{dbh}->do("CREATE TABLE $config " .
+			      "(parameter varchar, " .
+			      "value varchar, " .
+			      "PRIMARY KEY (parameter));")
+        or die "Couldn't create table $config: $DBI::errstr\n";
+    $self->{sqlgrey}{dbh}->do("INSERT INTO ");
 }
 
 #################
@@ -485,33 +651,7 @@ sub is_in_whitelist {
     ## waits all parameters
     ## for rcpt_whitelists for example
     my ($self, $sender_name, $sender_domain, $addr, $rcpt) = @_;
-
-    # don't try net_whitelist lookup if inet isn't supported
-    if (! $self->db_supports_inet()) {
-        return 0;
-    }
-
-    # Is it in a net referenced in the whitelists ?
-    my $query = "SELECT net FROM $net_whitelist " .
-	        "WHERE ? <<= net";
-
-    my $sth = $self->{sqlgrey}{dbh}->prepare($query);
-    if (!$sth->execute($addr)) {
-        $self->log(2, "Error: couldn't access $connect table: $DBI::errstr");
-	$self->initdb();
-        return 1; # accept
-    }
-    my $result = $sth->fetchall_arrayref();
-    if ($#$result == -1) {
-        return 0; # nothing matches
-    } else {
-        my $msg = "$addr matches following entries in net_whitelist: ";
-        foreach my $net (@$result) {
-	    $msg .= $net->[0] . " ";
-        }
-        $self->log(2, $msg);
-        return 1; # at least one entry matches
-    }
+    return 0;
 }
 
 ############
@@ -982,9 +1122,7 @@ B<sqlgrey> [I<options>...]
  -m, --max-connect-age=N    mail transfer attempt is forgotten N hours
                             after (default: 24)
      --db-type=TYPE         DBD driver to use (mysql, Pg and SQLite are
-                            tested, Pg advised for functionnality (manual
-                            net whitelist) mysql advised for raw
-                            performance with MyIsam tables (default: Pg)
+                            tested (default: Pg)
      --db-host=HOSTNAME     default: localhost
      --db-name=NAME         default: sqlgrey
      --db-user=USER         default: sqlgrey
@@ -1101,8 +1239,7 @@ to the newly created database to sqlgrey.
 =item *
 
 Use the packaged init script to start sqlgrey at boot and start it
-manually. The init script uses a /etc/sysconfig/sqlgrey file, have
-a look at the packaged example.
+manually.
 
 =back
 
@@ -1136,27 +1273,7 @@ This is the reason why you should maintain whitelists for them.
 
 =item *
 
-If you use PostgreSQL, then sqlgrey supports manual whitelisting. Simply
-add networks to the net_whitelist table :
-
-=over 2
-
-=item +
-
-for the a.b.c.d IP address :
-psql> INSERT INTO net_whitelist (ip_net) VALUES ('a.b.c.d/32');
-
-=item +
-
-for the 193.43.57.0-255 class C network :
-psql> INSERT INTO net_whitelist (ip_net) VALUES ('193.43.57.0/24');
-
-=back
-
-=item *
-
-If you don't use PosgreSQL, you can't use the net_whitelist table to add
-trusted networks, you'll have to use whitelisting at postfix's level.
+You'll have to use whitelisting at postfix's level.
 An example sqlgrey_client_access file is provided, you must put it in
 /etc/postfix and postmap it.
 
