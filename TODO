@@ -1,7 +1,10 @@
-1.4.x
+1.4.3
+- put back output to stdout
 - allow distributing whitelists from a central point
- . reload whitelists on SIGUSR1
+ . reload whitelists on SIGUSR1 (done)
  . separate script which updates the whitelist and calls SIGUSR1
+
+1.4.x
 - bug with multiple connect entries matching a reconnection (only in multiple
   SQLgrey instances configs) to fix
 - send mails (adjustable rate) to postmaster when the database goes down and comes back
@@ -20,6 +23,6 @@
 - consider optin/optout (is it easy to do with Postfix? Then provide an HOWTO
   else code it in SQLgrey)
 - support migrating from another greylister by calling it to learn its auto-whitelists
-    
+
 As soon as available...
 - gather enough perf data to decide on indices to add
