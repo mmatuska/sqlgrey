@@ -3,6 +3,8 @@
   -> accept multiple connect entries in "in_connect(), recently_in_connect()"
   -> remove the delete in "put_in_connect"
 
+- Add IPv6 support
+
 - external cleanup process/experiment with an adaptative cleanup algorithm
 
 - switch from log level to log categories
