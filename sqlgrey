@@ -243,8 +243,8 @@ sub interval {
             return $nb * 60;
         } else {
             # catch syntax errors
-            mydie 'interval(' . $nb . ', ' . $unit . ') for SQLite,'
-		. " sqlgrey doesn't recognise $unit UNIT\n";
+            $self->mydie('Interval error', 'interval(' . $nb . ', ' . $unit . ') for SQLite,'
+		. " sqlgrey doesn't recognise $unit UNIT");
         }
     } else { # use PostgreSQL syntax (probably the most SQL compliant)
         return "INTERVAL '" . "$nb $unit" . "'";
@@ -292,12 +292,14 @@ sub getconfig {
 				    "WHERE parameter = ?");
     if (!defined $sth or !$sth->execute($param)) {
 	$self->log(1, "Error: couldn't access $config table: $DBI::errstr");
-	mydie "Can't continue: config table unreadable\n";
+	$self->mydie('getconfig error',
+		     'Can\'t continue: config table unreadable');
     }
     my $result = $sth->fetchall_arrayref();
     if ($#$result != 0) {
         $self->log(1, "Error: unexpected SQL result");
-	mydie "Can't continue: unexpected config table read error\n";
+	$self->mydie('getconfig error',
+		     'Can\'t continue: unexpected config table read error');
     } else {
         return $result->[0][0];
     }
@@ -315,7 +317,8 @@ sub setconfig {
 				    "WHERE parameter = ?");
     if (!defined $sth or !$sth->execute($param)) {
 	$self->log(1, "Error: couldn't access $config table: $DBI::errstr");
-	mydie "Can't continue: config table unreadable\n";
+	$self->mydie('setconfig error',
+		     'Can\'t continue: config table unreadable');
     }
     my $result = $sth->fetchall_arrayref();
     if ($#$result != 0) {
@@ -510,7 +513,8 @@ sub create_from_awl_table {
 	      "last_seen timestamp NOT NULL, " .
 	      "PRIMARY KEY " .
 	      "(sender_name, sender_domain, host_ip));")
-	or mydie "Couldn't create table $from_awl: $DBI::errstr\n";
+	or $self->mydie('create_from_awl_table error',
+			'Couldn\'t create table $from_awl: $DBI::errstr');
 }
 
 sub create_domain_awl_table {
@@ -520,7 +524,8 @@ sub create_domain_awl_table {
 	      "host_ip varchar(15) NOT NULL, " .
 	      "last_seen timestamp NOT NULL, " .
 	      "PRIMARY KEY (sender_domain, host_ip));")
-	or mydie "Couldn't create table $from_awl: $DBI::errstr\n";
+	or $self->mydie('create_domain_awl_table error',
+			"Couldn't create table $domain_awl: $DBI::errstr");
 }
 
 sub create_connect_table {
@@ -533,7 +538,8 @@ sub create_connect_table {
 	      "ip_addr varchar(15) NOT NULL, " .
 	      "rcpt varchar(255) NOT NULL, " .
 	      "first_seen timestamp NOT NULL);")
-	or mydie "Couldn't create table $connect: $DBI::errstr\n";
+	or $self->mydie('create_connect_table',
+			"Couldn't create table $connect: $DBI::errstr");
 }
 
 sub create_config_table {
@@ -542,7 +548,8 @@ sub create_config_table {
 	      "(parameter varchar(255) NOT NULL, " .
 	      "value varchar(255), " .
 	      "PRIMARY KEY (parameter));")
-        or mydie "Couldn't create table $config: $DBI::errstr\n";
+        or $self->mydie('create_config_table',
+			"Couldn't create table $config: $DBI::errstr");
 }
 
 ##########
@@ -1410,7 +1417,7 @@ sub main()
     if (defined $opt{kill}) {
 	my $pidfile = $opt{pidfile} ? $opt{pidfile} : $dflt{pidfile};
 	open(PIDFILE, '<' . $pidfile)
-	    or mydie "Coudn't read pidfile: $pidfile\n";
+	    or die "Coudn't read pidfile: $pidfile\n";
 	while (<PIDFILE>) { # should only have one pid
 	    kill 15, $_;
 	}
