@@ -1,5 +1,5 @@
 %define name sqlgrey
-%define ver  1.4.2
+%define ver  1.4.3
 %define rel  1
 
 Summary:   SQLgrey is a postfix grey-listing policy service.
@@ -37,6 +37,7 @@ make clean
 %defattr(-,root,root)
 /etc/init.d/sqlgrey
 /usr/sbin/sqlgrey
+/usr/sbin/update_sqlgrey_whitelists
 /usr/share/man/man1/sqlgrey.1.gz
 %doc README HOWTO Changelog FAQ TODO
 %defattr(644,root,root)
@@ -66,6 +67,12 @@ if [ $1 = 0 ]; then
 fi
 
 %changelog
+* Sun Feb 06 2005 Lionel Bouton <lionel-dev@bouton.name>
+ - 1.4.3 release
+ - log to stdout when not in daemon mode
+ - added update_sqlgrey_whitelists script
+   whitelists can now be fetched from repositories
+      
 * Thu Jan 13 2005 Lionel Bouton <lionel-dev@bouton.name>
  - 1.4.2 release
  - Better cleanup logging from Rene Joergensen

@@ -33,7 +33,7 @@ use DBI;
 use vars qw(@ISA);
 @ISA = qw(Net::Server::Multiplex);
 
-my $VERSION = "1.4.2";
+my $VERSION = "1.4.3";
 my $software = 'SQLgrey-' . "$VERSION";
 
 my $DB_VERSION = 1;
@@ -1343,7 +1343,7 @@ sub main()
 		   $opt{pidfile} ? $opt{pidfile} : $dflt{pidfile}
 		   : undef,
             log_level       => $loglevel,
-            log_file        => 'Sys::Syslog',
+            log_file        => $opt{daemonize} ? 'Sys::Syslog' : undef,
             syslog_facility => 'mail',
             syslog_logsock  => 'unix',
             syslog_ident    => 'sqlgrey',
@@ -1659,36 +1659,16 @@ Be aware that some servers do not behave correctly and do not resend
 mails (as required by the standard) or use unique return addresses.
 This is the reason why you should maintain whitelists for them.
 
-=back
-
-=head2 WhiteListing
-
-=over 4
-
-=item *
-
-You'll have to use whitelisting at postfix's level.
-An example sqlgrey_client_access file is provided, you must put it in
-/etc/postfix and postmap it.
-
-Then you need to configure postfix to use the whitelist file.
-Edit /etc/main.cf and insert check_client_access in
-smtpd_recipient_restrictions :
-
- smtpd_recipient_restrictions =
-       ...
-       reject_unauth_destination
-       check_client_access    hash:/etc/postfix/sqlgrey_client_access
-       check_policy_service inet:127.0.0.1:2501
-
-Simply remove the check_client_access line if you don't need it.
+SQLgrey comes with a comprehensive whitelisting system. It can
+even be configured to fetch uptodate whitelists from a repository. See
+the HOWTO for the details.
 
 =back
 
 =head2 Disabling greylisting for some users
 
-If you want to disable greylisting for some users you can use 
-another file, users that do not want greylisting are listed  like this:
+If you want to disable greylisting for some users you can configure
+Postfix like this:
 
 /etc/postfix/sqlgrey_recipient_access:
   i_like_spam@ee.ethz.ch                OK

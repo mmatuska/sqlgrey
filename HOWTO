@@ -135,6 +135,11 @@ and submit the IP address and domain names you have to add to
 your .local files to make your users happy and the reason why
 you did so (see comments on why the existing systems are added).
 
+As of 1.4.3, SQLgrey's whitelists can be updated from a central repository
+with the update_sqlgrey_whitelists script.
+update_sqlgrey_whitelists outputs on STDOUT modified entries.
+Running it from cron is a great way to be warned of new whitelist entries.
+
 #################
 # RPM Packaging #
 #################

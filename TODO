@@ -1,18 +1,15 @@
-1.4.3
-- put back output to stdout
-- allow distributing whitelists from a central point
- . reload whitelists on SIGUSR1 (done)
- . separate script which updates the whitelist and calls SIGUSR1
+1.4.4
+- more support for VERP style return-paths
+- tune for SRS (SES and BATV too ?)
+- send mails (adjustable rate) to postmaster when the database goes down and comes back
 
 1.4.x
-- tune for SRS (SES and BATV too ?)
 - uniform ip_addr column name,
   add index on ip_addr in connect table
   and add first_seen in from_awl and domain_awl
   (up the database version to 2)
 - bug with multiple connect entries matching a reconnection (only in multiple
   SQLgrey instances configs) to fix
-- send mails (adjustable rate) to postmaster when the database goes down and comes back
 - create a stress-testing suite (for performance/reliability tests)
 - make SQLgrey return value configurable
   

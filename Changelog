@@ -1,4 +1,10 @@
-* Thu Jan 13 2004 Lionel Bouton <lionel-dev@bouton.name>
+* Sun Feb 06 2005 Lionel Bouton <lionel-dev@bouton.name>
+ - 1.4.3 release
+ - log to stdout when not in daemon mode
+ - added update_sqlgrey_whitelists script
+   whitelists can now be fetched from repositories
+
+* Thu Jan 13 2005 Lionel Bouton <lionel-dev@bouton.name>
  - 1.4.2 release
  - Better cleanup logging from Rene Joergensen
  - Fix for Syslog.pm error messages at init time
