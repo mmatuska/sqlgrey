@@ -1399,7 +1399,7 @@ sub read_smtp_server_regexp {
 
 sub read_dyn_fqdn_regexp {
     my $self = shift;
-    $self->{sqlgrey}{dyn_fqdn_re} = qr/$_/o;
+    $self->{sqlgrey}{dyn_fqdn_re} =
 	$self->read_a_regexp($dyn_fqdn_regexp_file);
 }
 
@@ -1417,7 +1417,10 @@ sub client_identifier {
     } elsif ($greymethod eq 'smart') {
 	# check $fqdn
 	# no fqdn, treat as suspicious
-	return $addr if $fqdn eq 'unknown';
+	if ($fqdn eq 'unknown') {
+	    $self->log(4, "Unknown RDNS: $addr");
+	    return $addr;
+	}
 
 	# we need the last byte
 	my @bytes = split(/\./, $addr);
