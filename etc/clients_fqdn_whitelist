@@ -62,3 +62,11 @@ lockergnome.wc09.net
 
 # Do not add anything here, create a "clients_fqdn_whitelist.local" file
 # and add your own entries in there
+
+#############################
+# Reported by SQLgrey users #
+#############################
+
+# No retry
+unitymail.alapage.com # Alapage newsletter
+smtp.mandrake.org # mandrake newsletter
