@@ -55,6 +55,7 @@ sub do {
     }
 }
 
+# take a database handler as last parameter
 sub table_exists {
     my $self = shift;
     my $tablename = shift;
@@ -209,14 +210,6 @@ sub normalize_rcpt {
     $user =~ s/\b\d+\b/#/g;
     # trim to 255 chars ( "$user" . "@" . "$domain" can be 64 + 1 + 255 but db only supports 255)
     return substr("$user\@$domain", 0, 255);
-}
-
-sub trim_spaces {
-     my $self = shift;
-     my $string = shift;
-     $string =~ s/^\s+//;
-     $string =~ s/\s+$//;
-     return $string;
 }
 
 ##########################################
@@ -494,10 +487,7 @@ sub cleanup_connect {
     if ($sth->execute()) {
 	my $result = $sth->fetchall_arrayref();
 	for my $spam (@{$result}) {
-	    $self->log(2, "Probable spam: " . $self->trim_spaces($$spam[2]) . ": " .
-                       $self->trim_spaces($$spam[0]) . "\@" . $self->trim_spaces($$spam[1]) .
-                       " -> " . $self->trim_spaces($$spam[3]) . " at " .
-                       $self->trim_spaces($$spam[4]));
+	    $self->log(2, "Probable spam: $$spam[2]: $$spam[0]" . "\@" . "$$spam[1] -> $$spam[3] at $$spam[4]");
 	}
     } else {
 	$self->log(2, "Error: couldn't list detected spam attempts");
@@ -669,11 +659,11 @@ sub main()
         },
         sqlgrey => {
             reconnect_delay => $opt{'reconnect-delay'}   || 5, # min time before reconnect (min)
-            max_connect_age => $opt{'max-connect-age'} || 12, # max time before reconnect (hour)
+            max_connect_age => $opt{'max-connect-age'} || 24, # max time before reconnect (hour)
             awl_age         => $opt{'awl-age'} || 60, # In days
 	    domain_level    => $opt{'group-domain-level'} || 2, # only 2
             last_maint      => time,
-	    maint_delay     => 600, # every 10 minutes cleanup all tables
+	    maint_delay     => 86400, # cleanup all tables everyday
  	    # TODO move into conf
             db_type         => $opt{'db-type'} || "mysql",
             db_name         => $opt{'db-name'} || "sqlgrey",
@@ -997,8 +987,6 @@ S<Lionel Bouton E<lt>lionel-dev@bouton.nameE<gt>>
 
 =head1 HISTORY
 
- 2004-08-07 lionel: v1.01 bug fix for space trimming
- 2004-08-03 lionel: v1.01 trim spaces before logging possible spams 
  2004-08-03 lionel: v1.0 added license reference at the top
                     included in a more packaged release
  2004-07-30 lionel: Bugfix: couldn't match on undefined sender
