@@ -59,3 +59,6 @@ lockergnome.wc09.net
 
 # Pool on different subnets
 /^fmr\d+\.intel\.com$/
+
+# Do not add anything here, create a "clients_fqdn_whitelist.local" file
+# and add your own entries in there

@@ -32,11 +32,11 @@ install: all
 	$(INSTALL) -d -m 755 $(CONFDIR)
 	$(INSTALL) -d -m 755 $(INITDIR)
 	$(INSTALL) -d -m 755 $(MANDIR)
-	$(INSTALL) sqlgrey $(BINDIR)
-	$(INSTALL) etc/sqlgrey.conf $(CONFDIR)
-	$(INSTALL) etc/clients_ip_whitelist $(CONFDIR)
-	$(INSTALL) etc/clients_fqdn_whitelist $(CONFDIR)
-	$(INSTALL) sqlgrey.1 $(MANDIR)
+	$(INSTALL) -m 755 sqlgrey $(BINDIR)
+	$(INSTALL) -m 644 etc/sqlgrey.conf $(CONFDIR)
+	$(INSTALL) -m 644 etc/clients_ip_whitelist $(CONFDIR)
+	$(INSTALL) -m 644 etc/clients_fqdn_whitelist $(CONFDIR)
+	$(INSTALL) -m 644 sqlgrey.1 $(MANDIR)
 
 rh-install: install
 	$(INSTALL) init/sqlgrey $(INITDIR)

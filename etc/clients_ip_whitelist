@@ -55,3 +55,6 @@
 #216.136.226.0	# Yahoo Mail?
 #216.157.204.5	# Groupwise?
 217.158.50.178  # AXKit mailing list (unique sender per attempt)
+
+# Do not add anything here, create a "clients_ip_whitelist.local" file
+# and add your own entries in there

@@ -11,6 +11,7 @@ As at least MySQL doesn't support NULL in PRIMARY KEYs, SQLgrey creates
 these '-undef- | -undef-' entries to recognise these cases.
 
 * Why isn't there any PRIMARY KEY or INDEX on the connect table ?
+* Why isn't there an INDEX on the column <xxx> ?
 
 I usually add a PRIMARY KEY to each table where there's a (KEY, VALUE)
 structure. It's rarely bad for performance and help detect bugs in

@@ -1,3 +1,2 @@
-- whitelisting with /etc/sqlgrey/*whitelist and /etc/sqlgrey/*whitelist.local
-- indexes on timestamps in from_awl and domain_awl
-- optionnal class-C based greylisting
+- gather enough perf data to decide on indexes to add
+- experiment with SPF support

@@ -38,6 +38,7 @@ make clean
 /etc/init.d/sqlgrey
 /usr/bin/sqlgrey
 /usr/share/man/man1/sqlgrey.1.gz
+%defattr(644,root,root)
 %config(noreplace) /etc/sqlgrey/sqlgrey.conf
 /etc/sqlgrey/clients_ip_whitelist
 /etc/sqlgrey/clients_fqdn_whitelist

@@ -6,9 +6,9 @@ To begin with you need a sqlgrey user :
 #####################
 
 SQLite : quick and dirty way. The database is integrated with sqlgrey.
-MySQL : lightweight DBRMS, lacks network whitelist support
-PostgreSQL : full-fledge DBRMS, proprietary network types make network
-             whitelists useable.
+MySQL : lightweight DBRMS, quite fast but not as stable and standard
+	 compliant as PostgreSQL.
+PostgreSQL : full-fledge, very mature DBRMS.
 
 ###########
 ## SQLite 
@@ -39,9 +39,8 @@ sous mysql:
 Read the man page (sqlgrey --man) and use the "--db-type=MySQL" parameter
 
 # Note :
-MySQL is quick, but doesn't support the network types, if you need
-whitelists for some SMTP servers, you'll have to add them in the
-Postfix configuration (see below).
+MySQL is really fast. I'd recommend it if you don't want to host critical
+databases with high access concurrency.
 
 ###############
 ## PostgreSQL
@@ -63,7 +62,7 @@ You'll have to check your pg_hba.conf file if you're not sure about
 the access control configuration. For the next step, you need to be
 able to connect as sqlgrey.
 
--bash-2.05b$ createdb -U sqlgrey  sqlgrey
+-bash-2.05b$ createdb -U sqlgrey x sqlgrey
 CREATE DATABASE
 -bash-2.05b$
 
@@ -71,12 +70,6 @@ Pay attention to the access controls : as Unix user sqlgrey, you must
 be able to connect to the sqlgrey database as sqlgrey PostgreSQL user...
 Look into pg_hba.conf and if needed set a password for the PostgreSQL
 sqlgrey user.
-
-With PostgreSQL you can add whitelists for odd MTAs:
-- for the a.b.c.d IP address :
-psql> INSERT INTO net_whitelist (ip_net) VALUES ('a.b.c.d/32');
-- for the 193.43.57.0-255 class C network :
-psql> INSERT INTO net_whitelist (ip_net) VALUES ('193.43.57.0/24');
 
 ###########################
 ## Postfix configuration ##
@@ -95,18 +88,61 @@ check_policy_service must come after reject_unauth_destination or
 you'll end up being an open-relay and listed in RBLs (you don't want
 that).
 
-If you need to whitelist some odd MTAs and don't use PostgreSQL,
-you'll have to use Postfix check_client_access :
-       check_client_access    hash:/etc/postfix/sqlgrey_client_access
+##################
+## Whitelisting ##
+##################
 
-a sqlgrey_client_access example is provided with sqlgrey.
-See http://www.greylisting.org/ for up-to-date whitelists.
+Some MTA don't play well with greylisting (often because they don't
+respect the RFCs). To work around this problem (that your users won't
+fail to report to you when it happens):
+- don't run sqlgrey in quiet mode (by default it will log what you need)
+- ask your user for the e-mail of the person that unsuccesfully tried
+ to send mail to her/him and when the unsuccessfull attempt occured.
+- grep your mail logs for the address, you'll find a line like this
+<timestamp> <system> sqlgrey[nnn]: new: www.xxx.yyy.zzz: <sender_address> -> <your_user>
+by default, one day later you'll find this line:
+<timestamp> <system> sqlgrey[nnn]: Probable spam: www.xxx.yyy.zzz: <sender_address> -> <your_user> at <timestamp>
+
+What matters to you is the IP address (or the class C network) and
+the domain name it is associated with. If Postfix could find a reliable
+domain name (the reverse lookup must itself point to the IP address),
+you'll find it in one of the lines in your log before the first
+sqlgrey log line.
+
+If you can get a reliable domain name, put it in
+/etc/sqlgrey/clients_fqdn_whitelist.local
+do *not* touch the /etc/sqlgrey/clients_fqdn_whitelist file as it will
+be overwritten by a future sqlgrey installation.
+The top of /etc/sqlgrey/clients_fqdn_whitelist explains the expected
+formats.
+You don't need to restart sqlgrey as it monitors the ".local" files
+and reload them as soon as they change or when they are created for
+the first time.
+
+If you can't get a reliable domain name, just put the IP address in
+the /etc/sqlgrey/clients_ip_whitelist.local file. If you need to,
+you can add a whole class C network by putting a line with only the
+three first bytes of the IP addresses.
+
+As it's quite important I repeat: only look for the installed
+clients_*_whitelist files for reference and put your own entries
+in the corresponding .local files.
+
+You are encouraged to subscribe to the sqlgrey-users mailing-list
+(see http://lists.sourceforge.net/lists/listinfo/sqlgrey-users)
+and submit the IP address and domain names you have to add to
+your .local files to make your users happy and the reason why
+you did so (see comments on why the existing systems are added).
 
 #################
 # RPM Packaging #
 #################
 
-The RPM package built with the spec file :
+Some of the steps required to install SQLgrey are covered by a RPM
+package built with the included spec file:
 - creates a sqlgrey user,
 - installs a /etc/init.d/sqlgrey SysV init file,
-- installs a /etc/sysconfig/sqlgrey config file
+- installs a /etc/sqlgrey/sqlgrey.conf config file
+- installs /etc/sqlgrey/clients_*_whitelist files
+
+What's left to you is the Postfix and Database setup.
