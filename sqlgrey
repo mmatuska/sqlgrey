@@ -226,14 +226,34 @@ sub table_exists {
     return 1;
 }
 
+# Drop a table
+sub drop_table {
+    my $self = shift;
+    my $table = shift;
+    $self->do("DROP TABLE $table");
+}
+
+# Database type queries
+sub SQLite {
+    my $self = shift;
+    return ($self->{sqlgrey}{db_type} eq 'SQLite');
+}
+sub PostgreSQL {
+    my $self = shift;
+    return ($self->{sqlgrey}{db_type} eq 'Pg');
+}
+sub MySQL {
+    my $self = shift;
+    return ($self->{sqlgrey}{db_type} eq 'mysql');
+}
+
 # INTERVAL syntax is platform dependant
 sub interval {
     my ($self, $nb, $unit) = @_;
-    my $db_type = $self->{sqlgrey}{db_type};
-    if ($db_type eq 'mysql') {
+    if ($self->MySQL()) {
 	# MySQL doesn't want any ' char
         return "INTERVAL $nb $unit";
-    } elsif ($db_type eq 'SQLite') {
+    } elsif ($self->SQLite()) {
 	# SQLite doesn't recognise INTERVAL
         if ($unit eq 'DAY') {
             return $nb * 24 * 60 * 60;
@@ -396,53 +416,106 @@ sub upgrade() {
 
 sub upgrade1() {
     my $self = shift;
-    my $db_type = $self->{sqlgrey}{db_type};
     $self->log(1, "Upgrading database schema from version 1 to version 2");
+
+    ## Note: SQLite 2.x needs a temporary table (no ALTER TABLE)
+    ## can we detect SQLite 3+ ?
 
     # connect
     $self->log(1, "$connect table: renaming ip_addr to src");
-    $self->do("ALTER TABLE $connect RENAME TO $connect" . "old");
+    if ($self->SQLite()) {
+	$self->create_connect_table('temp');
+	$self->do('INSERT INTO temp (sender_name, sender_domain, ' .
+		  'src, rcpt, first_seen) ' .
+		  'SELECT sender_name, sender_domain, ip_addr, ' .
+		  'rcpt, first_seen ' .
+		  "FROM $connect");
+	$self->drop_table($connect);
+    } else {
+	$self->do("ALTER TABLE $connect RENAME TO $connect" . "old");
+    }
     $self->create_connect_table();
-    $self->do("INSERT INTO $connect (sender_name, sender_domain, " .
-		  "src, rcpt, first_seen) " .
-		  "SELECT sender_name, sender_domain, ip_addr, " .
-		  "rcpt, first_seen " .
+    if ($self->SQLite()) {
+	$self->do("INSERT INTO $connect (sender_name, sender_domain, " .
+		  'src, rcpt, first_seen) ' .
+		  'SELECT sender_name, sender_domain, src, ' .
+		  'rcpt, first_seen ' .
+		  'FROM temp');
+	$self->drop_table('temp');
+    } else {
+	$self->do("INSERT INTO $connect (sender_name, sender_domain, " .
+		  'src, rcpt, first_seen) ' .
+		  'SELECT sender_name, sender_domain, ip_addr, ' .
+		  'rcpt, first_seen ' .
 		  "FROM $connect" . "old");
-    $self->do("DROP TABLE $connect" . "old");
+	$self->drop_table("$connect" . "old");
+    }
     $self->log(1, "$connect table: adding indexes");
     $self->create_connect_indexes();
 
     # from_awl
-    $self->log(1, "$from_awl: renaming host_ip to src");
-    $self->do("ALTER TABLE $from_awl RENAME TO $from_awl" . "old");
-    if ($db_type eq 'Pg') {
-	# we need to remove the pkey constraint
+    $self->log(1, "$from_awl: renaming host_ip to src, adding first_seen");
+    if ($self->SQLite()) {
+	$self->create_from_awl_table('temp');
+	$self->do("INSERT INTO temp (sender_name, sender_domain, " .
+		  'src, last_seen, first_seen) ' .
+		  'SELECT sender_name, sender_domain, host_ip, last_seen, last_seen ' .
+		  "FROM $from_awl");
+	$self->drop_table("$from_awl");
+    } else {
+	$self->do("ALTER TABLE $from_awl RENAME TO $from_awl" . "old");
+    }
+    if ($self->PostgreSQL()) { # we need to remove the pkey constraint
 	$self->do("ALTER TABLE $from_awl" . "old DROP CONSTRAINT " .
-		  "from_awl_pkey");
+		  'from_awl_pkey');
     }
     $self->create_from_awl_table();
-    $self->do("INSERT INTO $from_awl (sender_name, sender_domain, " .
-	      "src, last_seen, first_seen) " .
-	      "SELECT sender_name, sender_domain, host_ip, last_seen, last_seen " .
-	      "FROM $from_awl" . "old");
-    $self->do("DROP TABLE $from_awl" . "old");
+    if ($self->SQLite()) {
+	$self->do("INSERT INTO $from_awl (sender_name, sender_domain, " .
+		  'src, last_seen, first_seen) ' .
+		  'SELECT sender_name, sender_domain, src, last_seen, last_seen ' .
+		  'FROM temp');
+	$self->drop_table('temp');
+    } else {
+	$self->do("INSERT INTO $from_awl (sender_name, sender_domain, " .
+		  "src, last_seen, first_seen) " .
+		  "SELECT sender_name, sender_domain, host_ip, last_seen, last_seen " .
+		  "FROM $from_awl" . 'old');
+	$self->drop_table("$from_awl" . 'old');
+    }
     $self->log(1, "$from_awl: adding indexes");
     $self->create_from_awl_indexes();
 
     # domain_awl
-    $self->log(1, "$domain_awl: renaming host_ip to src");
-    $self->do("ALTER TABLE $domain_awl RENAME TO $domain_awl" . "old");
-    if ($db_type eq 'Pg') {
-	# we need to remove the pkey constraint
+    $self->log(1, "$domain_awl: renaming host_ip to src, adding first_seen");
+    if ($self->SQLite()) {
+	$self->create_domain_awl_table('temp');
+	$self->do("INSERT INTO temp (sender_domain, " .
+		  'src, last_seen, first_seen) ' .
+		  'SELECT sender_domain, host_ip, last_seen, last_seen ' .
+		  "FROM $domain_awl");
+	$self->drop_table("$domain_awl");
+    } else {
+	$self->do("ALTER TABLE $domain_awl RENAME TO $domain_awl" . "old");
+    }
+    if ($self->PostgreSQL()) { # we need to remove the pkey constraint
 	$self->do("ALTER TABLE $domain_awl" . "old DROP CONSTRAINT " .
-		  "domain_awl_pkey");
+		  'domain_awl_pkey');
     }
     $self->create_domain_awl_table();
-    $self->do("INSERT INTO $domain_awl (sender_domain, src, " .
-	      "last_seen, first_seen) " .
-	      "SELECT sender_domain, host_ip, last_seen, last_seen " .
-	      "FROM $domain_awl" . "old");
-    $self->do("DROP TABLE $domain_awl" . "old");
+    if ($self->SQLite()) {
+	$self->do("INSERT INTO $domain_awl (sender_domain, " .
+		  'src, last_seen, first_seen) ' .
+		  'SELECT sender_domain, src, last_seen, last_seen ' .
+		  'FROM temp');
+	$self->drop_table('temp');
+    } else {
+	$self->do("INSERT INTO $domain_awl (sender_domain, src, " .
+		  "last_seen, first_seen) " .
+		  "SELECT sender_domain, host_ip, last_seen, last_seen " .
+		  "FROM $domain_awl" . "old");
+	$self->do("DROP TABLE $domain_awl" . "old");
+    }
     $self->log(1, "$domain_awl: adding indexes");
     $self->create_domain_awl_indexes();
 
@@ -454,19 +527,19 @@ sub upgrade1() {
 sub cnctinfo {
 # Tested with PostgreSQL, MySQL and SQLite
     my $self = shift;
-    my $db_type = $self->{sqlgrey}{db_type};
-    my $dsn = "DBI:" . $db_type;
+    my $dsn = "DBI:" . $self->{sqlgrey}{db_type};
     # only MySQL uses database=
-    if ($db_type eq 'mysql') {
+    if ($self->MySQL()) {
         $dsn .= ":database=";
     } else {
         $dsn .= ":dbname=";
     }
     $dsn .= $self->{sqlgrey}{db_name};
     # only SQLite doesn't require a hostname
-    if ($db_type ne "SQLite") {
+    if (! $self->SQLite()) {
         $dsn .= ";host=" . $self->{sqlgrey}{db_host};
     }
+    $self->log(1, "DSN: $dsn");
     return $dsn;
 }
 
@@ -479,7 +552,6 @@ sub initdb {
 
 sub connectdb {
     my $self = shift;
-    my $db_type = $self->{sqlgrey}{db_type};
     $self->{sqlgrey}{dbh} = DBI->connect_cached($self->cnctinfo(),
 						$self->{sqlgrey}{db_user},
 						$self->{sqlgrey}{db_pass},
@@ -490,11 +562,11 @@ sub connectdb {
 
     # mysql drops the connection, we have some glue code
     # to reinit the connection, but better use mysql DBD code
-    if ($db_type eq 'mysql') {
+    if ($self->MySQL()) {
         $self->{sqlgrey}{dbh}->{mysql_auto_reconnect} = 1;
     }
     # Create "now()" function for SQLite
-    if ($db_type eq 'SQLite') {
+    if ($self->SQLite()) {
         $self->{sqlgrey}{dbh}->func('now', 0, sub { return time },
 				    'create_function' );
     }
@@ -506,7 +578,10 @@ sub connectdb {
 
 sub create_from_awl_table {
     my $self = shift;
-    $self->do("CREATE TABLE $from_awl " .
+    # allow optional table name
+    my $tablename = shift;
+    $tablename = ! defined $tablename ? $from_awl : $tablename;
+    $self->do("CREATE TABLE $tablename " .
 	      '(sender_name varchar(64) NOT NULL, ' .
 	      'sender_domain varchar(255) NOT NULL, ' .
 	      'src varchar(15) NOT NULL, ' .
@@ -515,7 +590,7 @@ sub create_from_awl_table {
 	      'PRIMARY KEY ' .
 	      '(src, sender_domain, sender_name))')
 	or $self->mydie('create_from_awl_table error',
-			'Couldn\'t create table $from_awl: $DBI::errstr');
+			'Couldn\'t create table $tablename: $DBI::errstr');
 }
 sub create_from_awl_indexes {
     my $self = shift;
@@ -527,14 +602,17 @@ sub create_from_awl_indexes {
 
 sub create_domain_awl_table {
     my $self = shift;
-    $self->do("CREATE TABLE $domain_awl " .
+    # allow optional table name
+    my $tablename = shift;
+    $tablename = ! defined $tablename ? $domain_awl : $tablename;
+    $self->do("CREATE TABLE $tablename " .
 	      '(sender_domain varchar(255) NOT NULL, ' .
 	      'src varchar(15) NOT NULL, ' .
 	      'first_seen timestamp NOT NULL, ' .
 	      'last_seen timestamp NOT NULL, ' .
 	      'PRIMARY KEY (src, sender_domain))')
 	or $self->mydie('create_domain_awl_table error',
-			"Couldn't create table $domain_awl: $DBI::errstr");
+			"Couldn't create table $tablename: $DBI::errstr");
 }
 sub create_domain_awl_indexes {
     my $self = shift;
@@ -546,16 +624,19 @@ sub create_domain_awl_indexes {
 
 sub create_connect_table {
     my $self = shift;
+    # allow optional table name
+    my $tablename = shift;
+    $tablename = ! defined $tablename ? $connect : $tablename;
     # Note: no primary key, Mysql can't handle 500+ byte primary keys
     # connect should not become big enough to make it a problem
-    $self->do("CREATE TABLE $connect " .
+    $self->do("CREATE TABLE $tablename " .
 	      '(sender_name varchar(64) NOT NULL, ' .
 	      'sender_domain varchar(255) NOT NULL, ' .
 	      'src varchar(15) NOT NULL, ' .
 	      'rcpt varchar(255) NOT NULL, ' .
 	      'first_seen timestamp NOT NULL)')
 	or $self->mydie('create_connect_table',
-			"Couldn't create table $connect: $DBI::errstr");
+			"Couldn't create table $tablename: $DBI::errstr");
 }
 sub create_connect_indexes {
     my $self = shift;
@@ -840,7 +921,7 @@ sub get_first_seen_in_from_awl {
     my $sth = $self->prepare_cached("SELECT MIN(first_seen) FROM $from_awl " .
 				    'WHERE sender_domain = ? AND src = ?');
 
-    if (!defined $sth or !$sth->execute($sender_domain, $host)) {
+    if (!defined $sth or !$sth->execute($domain, $host)) {
 	$self->db_unavailable();
 	$self->log(1, "Error: couldn't access $from_awl table: $DBI::errstr");
         return 0; # do as if table is empty
@@ -944,7 +1025,7 @@ sub get_reconnect_delay {
     my ($self, $sender_name, $sender_domain, $addr, $rcpt) = @_;
 
     my $query;
-    if ($self->{sqlgrey}{db_type} eq 'mysql') {
+    if ($self->MySQL()) {
         $query = "SELECT first_seen, SEC_TO_TIME(UNIX_TIMESTAMP(NOW())-" .
 	                            "UNIX_TIMESTAMP(first_seen)) " .
 		 "FROM $connect ";
