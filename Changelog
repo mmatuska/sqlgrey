@@ -1,0 +1,40 @@
+ 2004-11-07 lionel: v1.2.0
+	- Hardened against SQL code injection
+	- Better SQL error reporting
+	- Better VERP support
+	- Small typo logging
+	- Code cleanups
+ 2004-10-11 lionel: v1.1.2
+	- pidfile handling code bugfix
+ 2004-09-27 lionel: v1.1.1
+	- MySQL-related SQL syntax bugfix
+ 2004-09-21 lionel: v1.1.0
+	- SQLite support
+ 2004-09-14 lionel: v1.0.1
+	- manual formatting
+ 2004-09-07 lionel:
+	- pushed default max-age from 12 to 24 hours
+ 2004-08-07 lionel:
+	- bug fix for space trimming
+ 2004-08-03 lionel:
+	- trim spaces before logging possible spams
+	- v1.0 added license reference at the top
+ 2004-07-30 lionel:
+	- Bugfix: couldn't match on undefined sender
+	- debug code added
+ 2004-07-30 lionel:
+	- Removed NetAddr::IP dependency
+ 2004-07-17 lionel:
+	- Default max-age pushed to 12 hours instead of 5
+            (witnessed more than 6 hours for a mailing-list subscription
+             system)
+ 2004-07-02 lionel:
+	- Documentation
+ 2004-06-31 lionel:
+	- PostgreSQL support added
+ 2004-06-29 lionel:
+	- various cleanups and bug hunting
+ 2004-06-28 lionel:
+	- 2-level AWL support
+ 2004-06-27 lionel:
+	- Initial Version, replaced BDB by mysql in postgrey
