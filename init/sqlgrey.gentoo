@@ -1,0 +1,22 @@
+#!/sbin/runscript
+# Copyright 1999-2004 Lionel Bouton
+# Distributed under the terms of the GNU General Public License v2
+
+depend() {
+	use logger
+	before mta
+}
+
+start() {
+	ebegin "Starting SQLgrey"
+	# SQLite put files in the working directory
+	cd ~sqlgrey
+	sqlgrey -d
+	eend
+}
+
+stop() {
+	ebegin "Shutting down SQLgrey"
+	sqlgrey -k
+	eend
+}

@@ -1,5 +1,5 @@
 %define name sqlgrey
-%define ver  1.3.0
+%define ver  1.3.1
 %define rel  1
 
 Summary:   SQLgrey is a postfix grey-listing policy service.
@@ -28,7 +28,7 @@ reach your Postfix server (saves BW, user time and CPU time).
 make
 
 %install
-make install ROOTDIR=$RPM_BUILD_ROOT
+make rh-install ROOTDIR=$RPM_BUILD_ROOT
 
 cd $RPM_BUILD_ROOT
 find . -type f | sed 's,^\.,\%attr(-\,root\,root) ,' > $RPM_BUILD_DIR/file.list.sqlgrey

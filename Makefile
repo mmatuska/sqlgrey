@@ -1,4 +1,4 @@
-INSTALL = install -C
+INSTALL = install
 ETCDIR = $(ROOTDIR)/etc
 CONFDIR = $(ETCDIR)/sqlgrey
 BINDIR = $(ROOTDIR)/usr/bin
@@ -8,7 +8,7 @@ MANDIR = $(ROOTDIR)/usr/share/man/man1
 all: manpage
 
 manpage:
-	perldoc -u sqlgrey | pod2man -n sqlgrey | gzip > sqlgrey.1.gz
+	perldoc -u sqlgrey | pod2man -n sqlgrey > sqlgrey.1
 
 clean:
 	rm -f sqlgrey.1.gz
@@ -21,6 +21,11 @@ install: all
 	$(INSTALL) -d -m 755 $(INITDIR)
 	$(INSTALL) -d -m 755 $(MANDIR)
 	$(INSTALL) sqlgrey $(BINDIR)
-	$(INSTALL) etc/sqlgrey.conf $(ETCDIR)
+	$(INSTALL) etc/sqlgrey.conf $(CONFDIR)
+	$(INSTALL) sqlgrey.1 $(MANDIR)
+
+rh-install: install
 	$(INSTALL) init/sqlgrey $(INITDIR)
-	$(INSTALL) sqlgrey.1.gz $(MANDIR)
+
+gentoo-install: install
+	$(INSTALL) init/sqlgrey.gentoo $(INITDIR)/sqlgrey
