@@ -229,7 +229,7 @@ sub currentdbversion() {
     }
 
     # Common case: read from config table
-    return getconfig('version');
+    return $self->getconfig('version');
 }
 
 sub upgradedb() {
@@ -398,8 +398,8 @@ sub create_connect_table {
 sub create_config_table {
     my $self = shift;
     $self->{sqlgrey}{dbh}->do("CREATE TABLE $config " .
-			      "(parameter varchar, " .
-			      "value varchar, " .
+			      "(parameter varchar(255) NOT NULL, " .
+			      "value varchar(255), " .
 			      "PRIMARY KEY (parameter));")
         or die "Couldn't create table $config: $DBI::errstr\n";
     $self->{sqlgrey}{dbh}->do("INSERT INTO ");
