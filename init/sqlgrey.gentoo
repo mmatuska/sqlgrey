@@ -11,7 +11,7 @@ depend() {
 
 start() {
 	ebegin "Starting SQLgrey"
-	# SQLite put files in the working directory
+	# SQLite puts files in the working directory
 	cd ~sqlgrey
 	sqlgrey -d
 	eend
