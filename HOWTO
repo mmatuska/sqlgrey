@@ -74,6 +74,9 @@ Pay attention to the access controls : as Unix user sqlgrey, you must
 be able to connect to the sqlgrey database as sqlgrey PostgreSQL user...
 Look into pg_hba.conf and if needed set a password for the PostgreSQL
 sqlgrey user.
+sqlgrey will use the TCP/IP socket to connect, please make sure that
+"tcpip_socket = true"
+is in your 'postgresql.conf' file.
 
 ###########################
 ## Postfix configuration ##
