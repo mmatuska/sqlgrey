@@ -50,6 +50,7 @@ $dflt{quiet}              = undef;
 $dflt{verbose}            = undef;
 $dflt{debug}              = undef;
 $dflt{user}               = 'sqlgrey';
+$dflt{group}              = 'sqlgrey';
 $dflt{inet}               = '2501';
 $dflt{pidfile}            = '/var/run/sqlgrey.pid';
 $dflt{reconnect_delay}    = 1;            # 1 minute
@@ -73,6 +74,8 @@ my $stat_fqdn_whitelist_file = '/etc/sqlgrey/clients_fqdn_whitelist';
 my $dyn_fqdn_whitelist_file = '/etc/sqlgrey/clients_fqdn_whitelist.local';
 
 my $prepend = 'PREPEND X-Greylist: ';
+
+my $reload = 0; # used to signal a whitelists reload request
 
 ##########################
 ## Database helper subs ##
@@ -974,6 +977,26 @@ sub update_dyn_whitelists {
     $self->update_dyn_fqdn_whitelist();
 }
 
+# Set the reload flag
+sub mark_reload_request {
+    $reload = 1;
+}
+
+# When not in the middle of a processing...
+# check the reload flag
+sub got_reload_request {
+    my $myreload = $reload eq 1;
+    $reload = 0;
+    return ($myreload);
+}
+
+sub update_static_whitelists {
+    my $self = shift;
+    $self->log(2,"reloading static whitelists");
+    $self->read_static_ip_whitelist();
+    $self->read_dyn_fqdn_whitelist();
+}
+
 sub get_mtime {
     my $file = shift;
     # file exists ?
@@ -1112,12 +1135,16 @@ sub smtpd_access_policy($$)
     if (time() > ($self->{sqlgrey}{last_maint} +
 		  $self->{sqlgrey}{maint_delay})
        ) {
-        $self->log(4, "Maintenance delay expired: cleanup triggered");
+        # $self->log(4, "Maintenance delay expired: cleanup triggered");
         $self->cleanup();
         $self->{sqlgrey}{last_maint} = time();
     }
     # Check for new whitelists
     $self->update_dyn_whitelists();
+    # Check if we got the reload signal.
+    # We can't process this signal as soon as we receive it.
+    # We may be using variables for which it will trigger an update
+    $self->got_reload_request() and $self->update_static_whitelists();
 
     # whitelist check
     if ($self->is_in_whitelists($sender_name, $sender_domain,
@@ -1239,7 +1266,7 @@ sub main()
     my %opt = ();
     GetOptions(\%opt, 'help|h', 'man', 'version', 'configfile|f=s',
 	'verbose|v', 'quiet|q', 'debug','daemonize|d', 'inet|i=s',
-	'user|u=s', 'pidfile|p=s', 'reconnect-delay|r=i',
+	'user|u=s', 'group=s', 'pidfile|p=s', 'reconnect-delay|r=i',
         'max-connect-age|m=i', 'awl-age|a=i','group-domain-level|g=i',
         'db-type=s', 'db-name=s', 'db-host=s', 'db-user=s', 'db-pass=s',
         'kill|k', 'prepend=i', 'greymethod=s')
@@ -1293,6 +1320,7 @@ sub main()
             port            => [ $opt{inet} || $dflt{inet} ],
             proto           => 'tcp',
             user            => $opt{user} || $dflt{user},
+	    group           => $opt{group} || $dflt{group},
             setsid          => $opt{daemonize} ? 1 : undef,
             pid_file        => $opt{daemonize} ?
 		   $opt{pidfile} ? $opt{pidfile} : $dflt{pidfile}
@@ -1350,6 +1378,9 @@ sub pre_loop_hook() {
         $SIG{__DIE__}  = sub {Sys::Syslog::syslog('crit', "fatal: $_[0]");
 			      die @_;};
     }
+
+    $SIG{USR1} = \&mark_reload_request;
+
     $self->initdb();
     $self->log(4, "Initial cleanup");
     $self->cleanup();
@@ -1367,6 +1398,19 @@ sub pre_loop_hook() {
 	open(STDOUT,'>/dev/null');
 	open(STDERR,'>/dev/null');
     }
+}
+
+sub restart_open_hook() {
+    my $self = shift;
+    my $pidfile = $self->{server}{pid_file};
+    unlink $pidfile;
+}
+
+sub restart_close_hook() {
+    my $self = shift;
+
+    # SIGHUP triggers the whitelist reloading
+    $self->mark_reload_request();
 }
 
 # Main muxer :
@@ -1482,7 +1526,7 @@ Sqlgrey is a Postfix policy server implementing greylisting.
 When a request for delivery of a mail is received by Postfix via SMTP,
 the triplet C<CLIENT_IP> / C<SENDER> / C<RECIPIENT> is built. If it is
 the first time that this triplet is seen, or if the triplet was first
-seen less than I<reconnect-delay> minutes (5 is the default), then
+seen less than I<reconnect-delay> minutes (1 is the default), then
 the mail gets rejected with a temporary error. Hopefully spammers or
 viruses will not try again later, as it is however required per RFC.
 

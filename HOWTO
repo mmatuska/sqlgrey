@@ -1,5 +1,6 @@
 To begin with you need a sqlgrey user :
-- adduser sqlgrey.
+- groupadd sqlgrey
+- adduser -g sqlgrey sqlgrey
 
 #####################
 ## Database choice ##
@@ -22,7 +23,7 @@ parameters or setup /etc/sqlgrey.conf
 
 # Note :
 sqlgrey will create the file storing database data in the working
-directory.
+directory : launch sqlgrey in its home directory.
 
 ##########
 ## MySQL

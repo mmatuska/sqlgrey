@@ -1,7 +1,7 @@
 INSTALL = install
 ETCDIR = $(ROOTDIR)/etc
 CONFDIR = $(ETCDIR)/sqlgrey
-BINDIR = $(ROOTDIR)/usr/bin
+SBINDIR = $(ROOTDIR)/usr/sbin
 INITDIR = $(ETCDIR)/init.d
 MANDIR = $(ROOTDIR)/usr/share/man/man1
 
@@ -27,12 +27,12 @@ clean:
 	rm -f *~ init/*~ etc/*~
 
 install: all
-	$(INSTALL) -d -m 755 $(BINDIR)
+	$(INSTALL) -d -m 755 $(SBINDIR)
 	$(INSTALL) -d -m 755 $(ETCDIR)
 	$(INSTALL) -d -m 755 $(CONFDIR)
 	$(INSTALL) -d -m 755 $(INITDIR)
 	$(INSTALL) -d -m 755 $(MANDIR)
-	$(INSTALL) -m 755 sqlgrey $(BINDIR)
+	$(INSTALL) -m 755 sqlgrey $(SBINDIR)
 	$(INSTALL) -m 644 etc/sqlgrey.conf $(CONFDIR)
 	$(INSTALL) -m 644 etc/clients_ip_whitelist $(CONFDIR)
 	$(INSTALL) -m 644 etc/clients_fqdn_whitelist $(CONFDIR)

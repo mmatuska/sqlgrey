@@ -1,2 +1,17 @@
-- gather enough perf data to decide on indexes to add
+1.4.x
+- allow distributing whitelists from a central point
+ . reload whitelists on SIGUSR1
+ . separate script which updates the whitelist and calls SIGUSR1
+- send mails (adjustable rate) to postmaster when the database goes down and comes back
+- make maint_delay configurable
+
+1.5.x
+- use time units everywhere to make configuration easier
 - experiment with SPF support
+- consider optin/optout (is it easy to do with Postfix? Then provide an HOWTO
+  else code it in SQLgrey)
+- support migrating from another greylister by calling it to learn its auto-whitelists
+- external cleanup process/experiment with an adaptative cleanup algorithm
+
+As soon as available...
+- gather enough perf data to decide on indices to add

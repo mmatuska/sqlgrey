@@ -44,3 +44,14 @@ If you want to help on this and have at least a moderate-trafic MTA
 	first_seen BETWEEN now() - INTERVAL '24  HOUR' AND
 	now() - INTERVAL '6 MINUTE'
   with and without indexes (please give the INDEX creation syntax)
+
+##########
+## Misc ##
+##########
+
+* Is /var/sqlgrey really necessary ? Wouldn't it be enough to start
+  sqlgrey in /tmp ?
+
+/var/sqlgrey is needed for SQLite users. MySQL and PostgreSQL don't need it.
+Unfortunately there's no way for the RPM to now which database will be
+used.
