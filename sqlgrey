@@ -1471,7 +1471,6 @@ sub smtpd_access_policy($$)
 
     # Is it time for cleanups ?
     if (time() > $self->{sqlgrey}{next_maint}) {
-        # $self->log(4, "Maintenance delay expired: cleanup triggered");
         $self->cleanup();
         $self->{sqlgrey}{next_maint} = time() + $self->{sqlgrey}{db_cleandelay};
     }
@@ -1799,12 +1798,12 @@ sub mux_input()
                 # decide
                 my $action = $self->{net_server}->smtpd_access_policy($attr);
                 # debug
-                if($self->{net_server}{server}{log_level}>=4) {
-                    my $a = 'request: ';
-                    $a .= join(' ', map {"$_=$attr->{$_}"} (sort keys %$attr));
-                    $a .= " action=$action";
-                    $self->{net_server}->log(1, $a);
-                }
+                #if($self->{net_server}{server}{log_level}>=4) {
+                #    my $a = 'request: ';
+                #    $a .= join(' ', map {"$_=$attr->{$_}"} (sort keys %$attr));
+                #    $a .= " action=$action";
+                #    $self->{net_server}->log(1, $a);
+                #}
                 # give answer
                 print $fh "action=$action\n\n";
             }
