@@ -1,6 +1,5 @@
 INSTALL = install -C
 ETCDIR = $(ROOTDIR)/etc
-SYSCONFDIR = $(ETCDIR)/sysconfig
 BINDIR = $(ROOTDIR)/usr/bin
 INITDIR = $(ETCDIR)/init.d
 MANDIR = $(ROOTDIR)/usr/share/man/man1
@@ -19,6 +18,6 @@ install: all
 	$(INSTALL) -d -m 755 $(INITDIR)
 	$(INSTALL) -d -m 755 $(MANDIR)
 	$(INSTALL) sqlgrey $(BINDIR)
-	$(INSTALL) etc/sqlgrey $(SYSCONFDIR)
+	$(INSTALL) etc/sqlgrey.conf $(ETCDIR)
 	$(INSTALL) init/sqlgrey $(INITDIR)
 	$(INSTALL) sqlgrey.1.gz $(MANDIR)

@@ -43,6 +43,7 @@ my $net_whitelist = "net_whitelist";
 
 # defaults
 my %dflt;
+$dflt{verbose}            = 0;
 $dflt{user}               = "sqlgrey";
 $dflt{inet}               = "2501";
 $dflt{pidfile}            = "/var/run/sqlgrey.pid";
@@ -820,7 +821,7 @@ sub main()
             pid_file        => $opt{daemonize} ?
 		   $opt{pidfile} ? $opt{pidfile} : $dflt{pidfile}
 		   : undef,
-            log_level       => $opt{verbose} ? 4 : 2,
+            log_level       => ($opt{verbose} || ($dflt{verbose} != 0)) ? 4 : 2,
             log_file        => 'Sys::Syslog',
             syslog_facility => 'mail',
             syslog_logsock  => 'unix',
@@ -936,8 +937,9 @@ sqlgrey - Postfix Greylisting Policy Server
 B<sqlgrey> [I<options>...]
 
  -h, --help                 display this help and exit
+     --man                  display man page
      --version              output version information and exit
- -v, --verbose              increase verbosity level
+ -v, --verbose              increase log level
 
  -i, --inet=[HOST:]PORT     listen on PORT, localhost if HOST is not
                             specified (default localhost:2501)
@@ -970,13 +972,16 @@ B<sqlgrey> [I<options>...]
                             - '#' is used for comments
                             - parameter names using '-' (dash) on commandline
                               use '_' (underscore)in config file
+                            - not supported in config file:
+                              help, version, man, daemonize, kill, configfile
+                            - verbose mode activated with "verbose = 1"
                             example:
-                            ---------------------------------------
+                            -------------------------------------------------
                             # SQLgrey conf file
                             db_name = other_sqlgreydb
-                            inet = 25001
+                            inet = 25001           # bind on localhost:25001
                             group_domain_level = 0 # no domain AWL
-                            ---------------------------------------
+                            -------------------------------------------------
 
 =head1 DESCRIPTION
 
