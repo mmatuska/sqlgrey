@@ -458,17 +458,6 @@ sub normalize_rcpt {
     return substr("$user\@$domain", 0, 255);
 }
 
-# sometimes we get space-padded strings...
-# Note: this is a varchar(x) problem
-# won't be needed in SQLgrey 1.4
-sub trim_spaces {
-     my $self = shift;
-     my $string = shift;
-     $string =~ s/^\s+//;
-     $string =~ s/\s+$//;
-     return $string;
-}
-
 ##########################################
 ## Grey listing related database access ##
 ##########################################
@@ -788,15 +777,13 @@ sub cleanup_connect {
     if ($sth->execute()) {
 	my $result = $sth->fetchall_arrayref();
 	for my $spam (@{$result}) {
-	    $self->log(2, "Probable spam: " .
-		          $self->trim_spaces($$spam[2]) . ": " .
-                          $self->trim_spaces($$spam[0]) . "\@" .
-		          $self->trim_spaces($$spam[1]) . " -> " .
-        		  $self->trim_spaces($$spam[3]) . " at " .
-                          $self->trim_spaces($$spam[4]));
+	    $self->log(2, "Probable spam: $$spam[2]: " .
+		       "$$spam[0]\@$$spam[1] -> " .
+		       "$$spam[3] at $$spam[4]");
 	}
     } else {
 	$self->log(2, "Error: couldn't list detected spam attempts");
+	$self->initdb();
     }
     $self->do("DELETE FROM $connect " .
 	      "WHERE first_seen < now() - " .
@@ -1001,11 +988,11 @@ sub main()
 		                    || $dflt{max_connect_age},
 	    # How long is an AWL entry valid (days)
             awl_age         => $opt{'awl-age'} || $dflt{awl_age},
-	    # How many from in same domain/IP before we switch to domain AWL
+	    # How many from match a domain/IP before a switch to domain AWL
 	    domain_level    => $opt{'group-domain-level'}
 		                   || $dflt{group_domain_level},
             last_maint      => time,
-	    maint_delay     => 86400, # How often do we clean tables (seconds)
+	    maint_delay     => 0, # How often do we clean tables (seconds)
  	    # TODO move into conf
             db_type         => $opt{'db-type'} || $dflt{db_type},
             db_name         => $opt{'db-name'} || $dflt{db_name},
