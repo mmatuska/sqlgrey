@@ -39,7 +39,7 @@ make clean
 /usr/bin/sqlgrey
 /usr/share/man/man1/sqlgrey.1.gz
 %config(noreplace) /etc/sqlgrey/sqlgrey.conf
-%config(noreplace) /etc/sqlgrey/clients_ip_whitelist
+/etc/sqlgrey/clients_ip_whitelist
 %doc README HOWTO Changelog FAQ TODO
 
 %pre
