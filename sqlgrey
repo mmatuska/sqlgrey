@@ -278,8 +278,8 @@ sub past_tstamp {
         }
 	return 'now() - ' . $delay;
     } else { # use PostgreSQL syntax (probably the most SQL compliant)
-        return 'timestamp - ' . $self->{sqlgrey}{dbnow} .
-	    "INTERVAL '" . "$nb $unit" . "'";
+        return 'timestamp ' . $self->{sqlgrey}{dbnow} .
+	    " - INTERVAL '" . "$nb $unit" . "'";
     }
 }
 
