@@ -4,12 +4,10 @@
 #
 # chkconfig: 345 90 10
 # description: SQLgrey is a postfix grey-listing policy service.
+# pidfile: /var/run/sqlgrey.pid
 
 # Source function library.
 . /etc/rc.d/init.d/functions
-# Source network list
-[ ! -f /etc/sysconfig/sqlgrey ] && (echo "Error: missing /etc/sysconfig/sqlgrey"; exit 1)
-. /etc/sysconfig/sqlgrey
 
 # See how we were called.
 case "$1" in
@@ -17,7 +15,7 @@ case "$1" in
 	echo -n "Starting SQLgrey: "
 	# SQLite put files in the working directory
 	cd ~sqlgrey
-	sqlgrey -d --db-type=$DBTYPE --inet=$INET
+	sqlgrey -d
 	echo_success
 	echo
 	;;
