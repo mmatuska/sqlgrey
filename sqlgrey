@@ -903,14 +903,19 @@ mails from a single sender from the same IP...
 
 =item *
 
-Create a C<sqlgrey> user
+Create a C<sqlgrey> user. This will be the user the daemon runs as.
 
 =item *
 
-Write an init script to start sqlgrey at boot and start it. Like this
-for example:
+When using a full-fledge SGBD (MySQL and PostgreSQL, not SQLite),
+create a 'sqlgrey' db user and a 'sqlgrey' database. Grant access
+to the newly created database to sqlgrey.
 
- sqlgrey --inet=10023 -d
+=item *
+
+Use the packaged init script to start sqlgrey at boot and start it
+manually. The init script uses a /etc/sysconfig/sqlgrey file, have
+a look to the packaged example.
 
 =back
 

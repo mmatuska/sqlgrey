@@ -1,0 +1,111 @@
+To begin with you need a sqlgrey user :
+- adduser sqlgrey.
+
+#####################
+## Database choice ##
+#####################
+
+SQLite : quick and dirty way. The database is integrated with sqlgrey.
+MySQL : lightweight SGBD, lacks network whitelist support
+PostgreSQL : full-fledge SGBD, proprietary network types make network
+             whitelists useable.
+
+###########
+## SQLite 
+
+# Dependancies :
+you need the DBD::SQLite perl module (and libsqlite of course).
+
+# Howto :
+Read the man page (sqlgrey --man) and use "--db-type=SQLite --db-name=<db>"
+parameters
+
+# Note :
+sqlgrey will create the file holding the database data in the working
+directory.
+
+##########
+## MySQL
+
+# Dependancies :
+you need the DBD::MySQL perl module and a working MySQL server.
+
+# Howto :
+Create a sqlgrey database and a mysql sqlgrey user:
+sous mysql:
+> CREATE DATABASE sqlgrey;
+> GRANT ALL ON sqlgrey.* TO sqlgrey@localhost;
+
+Read the man page (sqlgrey --man) and use the "--db-type=MySQL" parameter
+
+# Note :
+MySQL is quick, but doesn't support the network types, if you need
+whitelists for some SMTP servers, you'll have to add them in the
+Postfix configuration.
+
+###############
+## PostgreSQL
+
+# Dependancies :
+you need the DBD::Pg perl module and a working PostgreSQL server.
+
+# Howto :
+1/ Create a sqlgrey database and a PostgreSQL sqlgrey user:
+as postgres user (su - postgres):
+
+-bash-2.05b$ createuser sqlgrey
+Shall the new user be allowed to create databases? (y/n) y
+Shall the new user be allowed to create more new users? (y/n) n
+CREATE USER
+-bash-2.05b$
+
+You'll have to check your pg_hba.conf file if you're not sure about
+the access control configuration. For the next step, you need to be
+able to connect as sqlgrey.
+
+-bash-2.05b$ createdb -U sqlgrey  sqlgrey
+CREATE DATABASE
+-bash-2.05b$
+
+Pay attention to the access controls : as Unix user sqlgrey, you must
+be able to connect to the sqlgrey database as sqlgrey PostgreSQL user...
+Look into pg_hba.conf and if needed set a password for the PostgreSQL
+sqlgrey user.
+
+With PostgreSQL you can add whitelists for odd MTAs:
+- for the a.b.c.d IP address :
+psql> INSERT INTO net_whitelist (ip_net) VALUES ('a.b.c.d/32');
+- for the 193.43.57.0-255 class C network :
+psql> INSERT INTO net_whitelist (ip_net) VALUES ('193.43.57.0/24');
+
+###########################
+## Postfix configuration ##
+###########################
+
+Start by adding check_policy_service after reject_unauth_destination in
+/etc/postfix/main.cf :
+
+ smtpd_recipient_restrictions =
+               ...
+               reject_unauth_destination
+               check_policy_service inet:127.0.0.1:10023
+
+This assumes sqlgrey will listen on the TCP 10023 port.
+check_policy_service must come after reject_unauth_destination or
+you'll end up being an open-relay and listed in RBLs (you don't want
+that).
+
+If you need to whitelist some odd MTAs and don't use PostgreSQL,
+you'll have to use Postfix check_client_access :
+       check_client_access    hash:/etc/postfix/sqlgrey_client_access
+
+a sqlgrey_client_access example is provided with sqlgrey.
+
+#################
+# RPM Packaging #
+#################
+
+The RPM package built with the spec file :
+- creates a sqlgrey user,
+- installs a /etc/init.d/sqlgrey SysV init file,
+- installs a /etc/sysconfig/sqlgrey config file

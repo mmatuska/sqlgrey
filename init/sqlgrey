@@ -15,6 +15,8 @@
 case "$1" in
   start)
 	echo -n "Starting SQLgrey: "
+	# SQLite put files in the working directory
+	cd ~sqlgrey
 	sqlgrey -d --db-type=$DBTYPE --inet=$INET
 	echo_success
 	echo

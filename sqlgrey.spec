@@ -37,7 +37,7 @@ find . -type f | sed 's,^\.,\%attr(-\,root\,root) ,' > $RPM_BUILD_DIR/file.list.
 make clean
 
 %files -f ../file.list.sqlgrey
-%doc sqlgrey_client_access
+%doc sqlgrey_client_access README HOWTO
 
 %post
 if ! /usr/bin/id sqlgrey 2>/dev/null; then /usr/sbin/adduser -m -k /dev/null sqlgrey; fi
