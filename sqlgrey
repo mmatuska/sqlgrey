@@ -804,9 +804,9 @@ sub delete_mail_ip_from_connect {
     my ($self, $sender_name, $sender_domain, $addr) = @_;
 
     $self->do("DELETE FROM $connect " .
-	      "WHERE sender_name = '$sender_name' " .
-	      "AND sender_domain = '$sender_domain' " .
-	      "AND ip_addr = '$addr'");
+	      "WHERE sender_name = " . $self->quote($sender_name) .
+	      " AND sender_domain = " . $self->quote($sender_domain) .
+	      " AND ip_addr = " . $self->quote($addr));
 }
 
 # clean probable SPAM attempts and log them
