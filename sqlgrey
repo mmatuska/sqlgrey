@@ -751,7 +751,7 @@ sub deverp_user {
     # strip hexadecimal sequences (doable in one regexp ?)
     # don't strip a leading hex sequence though
     my $tmp = '';
-    while ($tmp != $user) {
+    while ($tmp ne $user) {
 	$tmp = $user;
 	$user =~ s/([._-])[0-9a-f]+([._-])/$1#$2/g;
     }
