@@ -10,7 +10,7 @@ deliver your messages. When doing so, the Return-Path is empty.
 As at least MySQL doesn't support NULL in PRIMARY KEYs, SQLgrey creates
 these '-undef- | -undef-' entries to recognise these cases.
 
-* Why isn't there any PRIMARY KEY or INDEX on the connect table ?
+* Why isn't there any PRIMARY KEY on the connect table ?
 * Why isn't there an INDEX on the column <xxx> ?
 
 I usually add a PRIMARY KEY to each table where there's a (KEY, VALUE)
@@ -25,34 +25,21 @@ specific PRIMARY KEY. I chose not to because I was not convinced it
 was a good idea to introduce different database schema depending on
 the actual database system.
 
-More importantly, it may very well be that simple indexes on some columns
-might be sufficient and will be supported by every database.
+There are two indexes on the connect table to speed up the queries:
+- one on first_seen
+- one on (src, sender_domain, sender_name)
 
-If you want to help on this and have at least a moderate-trafic MTA
-(more than 5000 messages/day), please send me (lionel-dev@bouton.name) :
+* Postfix starts refusing messages some time after installing SQLgrey,
+  what's going on?
 
-- the result of "SELECT count(*) FROM connect",
-- the mean execution time of 
-	SELECT count(*) FROM connect
-	WHERE  first_seen < NOW() - INTERVAL '24 HOUR'
- (for MySQL remove the single-quotes from '24 HOUR')
-  with and without indexes (please give the INDEX creation syntax)
-- the mean execution time of
-	SELECT 1 FROM connect
-	WHERE sender_name = <val> AND sender_domain = <val>
-	AND ip_addr = <val> AND rcpt = <val> AND
-	first_seen BETWEEN now() - INTERVAL '24  HOUR' AND
-	now() - INTERVAL '6 MINUTE'
-  with and without indexes (please give the INDEX creation syntax)
-
-* Postfix starts refusing messages and I see lots of connect entries,
-What's going on?
-
-the connect table doesn't have any index, which is bad for high trafic
-sites and can lead to timeouts in Postfix waiting for SQLgrey to answer
-adding an index on the ip_addr column of the connect table solves this.
-In the future, this will be added automatically on any 1.5.x
-installation or later.
+That was a common problem with 1.4.x and large installs. The connect table
+didn't have any index and needed full table scans for most connections.
+The database was overloaded and SQLgrey couldn't answer in time. If it
+happens with 1.5.x, you have an unordinary setup (insane trafic and a 386
+for the database for example). Look for heavy disk usage, try to tune
+your database server to allow it to load indexes in RAM and the table itself
+if needed.
+In any case, report your problem to sqlgrey-users@lists.sourceforge.net
 
 ##########
 ## Misc ##
@@ -62,5 +49,4 @@ installation or later.
   sqlgrey in /tmp ?
 
 /var/sqlgrey is needed for SQLite users. MySQL and PostgreSQL don't need it.
-Unfortunately there's no way for the RPM to now which database will be
-used.
+Unfortunately there's no way to guess which database will be used.

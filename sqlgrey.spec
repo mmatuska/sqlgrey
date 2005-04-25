@@ -1,5 +1,5 @@
 %define name sqlgrey
-%define ver  1.5.4
+%define ver  1.5.5
 %define rel  1
 
 Summary:   SQLgrey is a postfix grey-listing policy service.
@@ -63,6 +63,12 @@ if [ $1 = 0 ]; then
 fi
 
 %changelog
+* Tue Apr 25 2005 Lionel Bouton <lionel-dev@bouton.name>
+ - 1.5.5 release
+ - small fix for SRS (again!)
+ - small fix for deverp code
+ - log types
+
 * Tue Mar 15 2005 Lionel Bouton <lionel-dev@bouton.name>
  - 1.5.4 release
  - fix for regexp compilation (regexp in fqdn_whitelists didn't work)
@@ -81,7 +87,7 @@ fi
 
 * Wed Feb 23 2005 Lionel Bouton <lionel-dev@bouton.name>
  - 1.5.0 release
- - drop support for obsolote command-line parameters
+ - drop support for obsolete command-line parameters
  - migrate databases to a new layout :
   . first_seen added to the AWLs
   . optimize AWL Primary Keys
