@@ -107,6 +107,10 @@ sub mylog {
 	$self->log($loglevel, "Unknown logtype ($logtype): " . shift);
     }
     if ($loglevel <= $self->{sqlgrey}{log}{$logtype}) {
+	# workaround: we can't disable the TCP connections
+	# logs if we use log_level 4 so log_level is capped by default
+	$loglevel = $loglevel > $self->{server}{log_level} ?
+	    $self->{server}{log_level} : $loglevel;
 	$self->log($loglevel, "$logtype: " . shift);
     }
 }
@@ -1807,7 +1811,8 @@ sub main()
 	    group           => $dflt{group},
             setsid          => $opt{daemonize} ? 1 : undef,
             pid_file        => $opt{daemonize} ? $dflt{pidfile} : undef,
-            log_level       => 4, # we don't filter here now
+	    # ugly hack: 4 will triger Net::Server debugs
+            log_level       => $dflt{loglevel} > 2 ? $dflt{loglevel} : 2,
             log_file        => $opt{daemonize} ? 'Sys::Syslog' : undef,
             syslog_facility => 'mail',
             syslog_logsock  => 'unix',
