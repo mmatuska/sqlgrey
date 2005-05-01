@@ -31,7 +31,7 @@ pkg_setup() {
 src_install () {
 	make gentoo-install ROOTDIR=${D}
 	prepall
-	dodoc HOWTO FAQ README COPYING TODO Changelog db_performance_reports
+	dodoc HOWTO FAQ README README.OPTINOUT COPYING TODO Changelog
 
 	# keeps SQLgrey data in /var/spool/sqlgrey
 	diropts -m0775 -o sqlgrey -g sqlgrey
