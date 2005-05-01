@@ -908,11 +908,13 @@ sub create_optout_email_table {
 
 # don't try too hard to do exact matches here
 sub is_ipv4 {
-    return ($_ =~ /^[\d\.]*$/) ? 1 : 0;
+    my $addr = shift;
+    return (($addr =~ /^[\d\.]*$/) ? 1 : 0);
 }
 
 sub is_ipv6 {
-    return ($_ =~ /^[0123456789abcdef:]*$/) ? 1 : 0;
+    my $addr = shift;
+    return (($addr =~ /^[0123456789abcdef:]*$/) ? 1 : 0);
 }
 
 sub class_c {
@@ -931,7 +933,7 @@ sub class_c {
 sub get_last_addr_part {
     my $addr = shift;
     if (is_ipv4($addr)) {
-	return (split(/\./, shift))[3];
+	return (split(/\./, $addr))[3];
     } elsif (is_ipv6($addr)) {
 	my @splitted = split(/:/, $addr);
 	return $splitted[$#splitted - 1];
