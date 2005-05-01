@@ -1,0 +1,74 @@
+  ######################################
+  ## SQLgrey support for Optin/optout ##
+  ######################################
+
+SQLgrey behaviour depends on the 'optmethod' configuration variable in
+/etc/sqlgrey/sqlgrey.conf
+
+## Default
+
+By default optmethod is set to 'none'. SQLgrey will apply greylisting
+(with the default whitelisting and auto-whitelisting described in the
+HOWTO) to every message.
+
+## Optin/Optout
+
+If optmethod is set to either 'optin' or 'optout' (don't use the
+quotes in sqlgrey.conf), SQLgrey will check four tables to decide if
+the greylisting must be used.
+
+These four tables are:
+. optin_domain
+. optin_email
+. optout_domain
+. optout_email
+
+They each have only one column with either a domain name or a full
+email address (stored as a VARCHAR(255)).
+
+** Important Note **
+the content of each of these table *MUST* be *lowercased*. SQLgrey
+always use lowercased address internally and for performance reasons
+won't ask the database to check for different cases.
+********************
+
+If 'optin' is used, SQLgrey will only greylist in two cases:
+
+- the domain is in optin_domain AND the address isn't in optout_email,
+- the address is in optin_email.
+
+If 'optout' is used, SQLgrey won't greylist in two cases:
+
+- the domain is in optout_domain AND the address isn't in optin_email,
+- the address is in optout_email.
+
+** Note **
+SQLgrey doesn't check if the 4 tables' content is consistent. For
+example you should make sure that an address isn't both in optin_email
+and optout_email which doesn't make sense (SQLgrey won't crash but its
+behaviour can change between versions).
+**********
+
+## Performance guidelines
+
+For maximum performance, you should use the method which will use the
+least table entries. If nearly all your users want greylisting, you'll
+have better performance with 'optout'. If all of them want it without
+exception, use 'none'.
+
+If the needs of your users change between domains, use one of the
+optin/out_domain tables to set defaults (depending on the optmethod)
+by domain and add exceptions in the optin/out_email tables. This will
+lower the number of entries in the database and help with performance.
+
+## Long email addresses
+
+For portability, addresses are limited to 255 characters. If you have
+users with addresses of more than 255 characters, you'll have to trim
+the addresses the same way SQLgrey does: simply take the 255 first
+characters of the address leaving the rest out.
+If you have several users with the same 255 first characters, then it
+won't work properly (obviously the last user modified will set the
+behaviour for the group beginning with the same characters). As
+addresses of this size are pretty uncommon, the risk of collisions is
+probably only theoric though.

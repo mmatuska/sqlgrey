@@ -37,12 +37,16 @@ use vars qw(@ISA);
 my $VERSION = "1.5.5";
 my $software = 'SQLgrey-' . "$VERSION";
 
-my $DB_VERSION = 2;
+my $DB_VERSION = 3;
 
 # Table names
 my $connect       = 'connect';
 my $from_awl      = 'from_awl';
 my $domain_awl    = 'domain_awl';
+my $optin_domain  = 'optin_domain';
+my $optin_email   = 'optin_email';
+my $optout_domain = 'optout_domain';
+my $optout_email  = 'optout_email';
 my $config        = 'config';
 
 # defaults
@@ -65,9 +69,10 @@ $dflt{db_user}            = 'sqlgrey';
 $dflt{db_pass}            = '';
 $dflt{prepend}            = 1;
 $dflt{greymethod}         = 'smart';
+$dflt{optmethod}          = 'none'; # or 'optin' or 'optout'
 $dflt{db_cleandelay}	  = 30 * 60;
 $dflt{admin_mail}         = '';
-$dflt{log} = {
+$dflt{log} = { # note values here are not used
 	      'mail' => 2,
 	      'dbaccess' => 2,
 	      'martians' => 2,
@@ -200,17 +205,17 @@ sub do {
     if (! $self->{sqlgrey}{db_available}) {
 	$self->connectdb();
     }
-    if (!defined $self->{sqlgrey}{dbh} or
-	!($result = $self->{sqlgrey}{dbh}->do($query))) {
+    if (defined $self->{sqlgrey}{dbh} and
+	($result = $self->{sqlgrey}{dbh}->do($query))) {
+	$self->db_available();
+	return $result;
+    } else {
 	# failure
 	$self->db_unavailable();
         $self->mylog('dbaccess', 0, "warning: couldn't do query:\n" .
 		   "$query:\n" .
 		   "$DBI::errstr, reconnecting to DB");
 	return undef;
-    } else {
-	$self->db_available();
-	return $result;
     }
 }
 
@@ -335,35 +340,48 @@ sub update_dbnow {
 # Create tables if not done already
 sub database_setup {
     my $self = shift;
-
-    my $wasempty = 1;
-    my $wasfull = 1;
-    if (! $self->table_exists("$from_awl")) {
+    my $noconfig = 1;
+    # AWL and connect tables checks
+    if (! $self->table_exists($from_awl)) {
 	$self->create_from_awl_table();
 	$self->create_from_awl_indexes();
-	$wasfull = 0; } else { $wasempty = 0; }
-    if (! $self->table_exists("$domain_awl")) {
+    }
+    if (! $self->table_exists($domain_awl)) {
 	$self->create_domain_awl_table();
 	$self->create_domain_awl_indexes();
-	$wasfull = 0; } else { $wasempty = 0; }
-    if (! $self->table_exists("$connect")) {
+    }
+    if (! $self->table_exists($connect)) {
 	$self->create_connect_table();
 	$self->create_connect_indexes();
-	$wasfull = 0; } else { $wasempty = 0, }
+    }
+    # optin/out tables checks
+    if (! $self->table_exists($optin_domain)) {
+	$self->create_optin_domain_table();
+    }
+    if (! $self->table_exists($optin_email)) {
+	$self->create_optin_email_table();
+    }
+    if (! $self->table_exists($optout_domain)) {
+	$self->create_optout_domain_table();
+    }
+    if (! $self->table_exists($optout_email)) {
+	$self->create_optout_email_table();
+    }
 
-    if ($self->currentdbversion($wasempty) < $DB_VERSION) {
+    # config table check
+    if (! $self->table_exists($config)) {
+	$self->create_config_table();
+	$self->setconfig('version',$DB_VERSION);
+    } else { $noconfig = 0; }
+
+    # if config did exist, we have to check the DB version
+    if ($self->currentdbversion($noconfig) < $DB_VERSION)
 	$self->mylog('dbaccess', 1, "upgrading database from " .
-		   $self->currentdbversion($wasempty) . " to " .
+		   $self->currentdbversion($noconfig) . " to " .
 		   $DB_VERSION);
 	$self->upgradedb();
     }
 
-    # if upgradedb wasn't run ($wasempty == 1)
-    # we must create the config table
-    if (! $self->table_exists("$config")) {
-	$self->create_config_table();
-	$self->setconfig('version',$DB_VERSION);
-    }
     # database errors were masked until now
     $self->{sqlgrey}{warn_db} = 1;
 }
@@ -438,10 +456,10 @@ sub insertconfig() {
 
 sub currentdbversion() {
     my $self = shift;
-    my $wasempty = shift;
+    my $noconfig = shift;
 
     # Empty DB -> it is created with current version
-    if ($wasempty) {
+    if ($noconfig) {
 	return $DB_VERSION;
     }
 
@@ -470,8 +488,10 @@ sub upgrade() {
 	$self->mydie('Too old SQLgrey database',
 		    'The current layout of the SQLgrey database is too old,' .
 		    'please launch SQLgrey 1.4 to convert it to a layout I can understand');
-    } elsif($ver == 1) {
+    } elsif ($ver == 1) {
 	$self->upgrade1();
+    } elsif ($ver == 2) {
+	$self->upgrade2();
     }
 }
 
@@ -584,6 +604,115 @@ sub upgrade1() {
     $self->setconfig('version','2');
 }
 
+sub upgrade2() {
+    my $self = shift;
+    $self->mylog('dbaccess', 1, "upgrading database schema from version 2 to version 3");
+
+    ## Note: SQLite 2.x needs a temporary table (no ALTER TABLE)
+    ## can we detect SQLite 3+ ?
+
+    # connect
+    $self->mylog('dbaccess', 2, "$connect: making room for IPv6 in src");
+    if ($self->SQLite()) {
+	$self->create_connect_table('temp');
+	$self->do('INSERT INTO temp (sender_name, sender_domain, ' .
+		  'src, rcpt, first_seen) ' .
+		  'SELECT sender_name, sender_domain, ip_addr, ' .
+		  'rcpt, first_seen ' .
+		  "FROM $connect");
+	$self->drop_table($connect);
+    } else {
+	$self->do("ALTER TABLE $connect RENAME TO $connect" . "old");
+    }
+    $self->create_connect_table();
+    if ($self->SQLite()) {
+	$self->do("INSERT INTO $connect (sender_name, sender_domain, " .
+		  'src, rcpt, first_seen) ' .
+		  'SELECT sender_name, sender_domain, src, ' .
+		  'rcpt, first_seen ' .
+		  'FROM temp');
+	$self->drop_table('temp');
+    } else {
+	$self->do("INSERT INTO $connect (sender_name, sender_domain, " .
+		  'src, rcpt, first_seen) ' .
+		  'SELECT sender_name, sender_domain, ip_addr, ' .
+		  'rcpt, first_seen ' .
+		  "FROM $connect" . "old");
+	$self->drop_table("$connect" . "old");
+    }
+    $self->mylog('dbaccess', 2, "$connect: adding indexes");
+    $self->create_connect_indexes();
+
+    # from_awl
+    $self->mylog('dbaccess', 2, "$from_awl: making room for IPv6 in src");
+    if ($self->SQLite()) {
+	$self->create_from_awl_table('temp');
+	$self->do("INSERT INTO temp (sender_name, sender_domain, " .
+		  'src, last_seen, first_seen) ' .
+		  'SELECT sender_name, sender_domain, host_ip, last_seen, last_seen ' .
+		  "FROM $from_awl");
+	$self->drop_table("$from_awl");
+    } else {
+	$self->do("ALTER TABLE $from_awl RENAME TO $from_awl" . "old");
+    }
+    if ($self->PostgreSQL()) { # we need to remove the pkey constraint
+	$self->do("ALTER TABLE $from_awl" . "old DROP CONSTRAINT " .
+		  'from_awl_pkey');
+    }
+    $self->create_from_awl_table();
+    if ($self->SQLite()) {
+	$self->do("INSERT INTO $from_awl (sender_name, sender_domain, " .
+		  'src, last_seen, first_seen) ' .
+		  'SELECT sender_name, sender_domain, src, last_seen, last_seen ' .
+		  'FROM temp');
+	$self->drop_table('temp');
+    } else {
+	$self->do("INSERT INTO $from_awl (sender_name, sender_domain, " .
+		  "src, last_seen, first_seen) " .
+		  "SELECT sender_name, sender_domain, host_ip, last_seen, last_seen " .
+		  "FROM $from_awl" . 'old');
+	$self->drop_table("$from_awl" . 'old');
+    }
+    $self->mylog('dbaccess', 2, "$from_awl: adding indexes");
+    $self->create_from_awl_indexes();
+
+    # domain_awl
+    $self->mylog('dbaccess', 2, "$domain_awl: mkaing room for IPv6 in src");
+    if ($self->SQLite()) {
+	$self->create_domain_awl_table('temp');
+	$self->do("INSERT INTO temp (sender_domain, " .
+		  'src, last_seen, first_seen) ' .
+		  'SELECT sender_domain, host_ip, last_seen, last_seen ' .
+		  "FROM $domain_awl");
+	$self->drop_table("$domain_awl");
+    } else {
+	$self->do("ALTER TABLE $domain_awl RENAME TO $domain_awl" . "old");
+    }
+    if ($self->PostgreSQL()) { # we need to remove the pkey constraint
+	$self->do("ALTER TABLE $domain_awl" . "old DROP CONSTRAINT " .
+		  'domain_awl_pkey');
+    }
+    $self->create_domain_awl_table();
+    if ($self->SQLite()) {
+	$self->do("INSERT INTO $domain_awl (sender_domain, " .
+		  'src, last_seen, first_seen) ' .
+		  'SELECT sender_domain, src, last_seen, last_seen ' .
+		  'FROM temp');
+	$self->drop_table('temp');
+    } else {
+	$self->do("INSERT INTO $domain_awl (sender_domain, src, " .
+		  "last_seen, first_seen) " .
+		  "SELECT sender_domain, host_ip, last_seen, last_seen " .
+		  "FROM $domain_awl" . "old");
+	$self->do("DROP TABLE $domain_awl" . "old");
+    }
+    $self->mylog('dbaccess', 2, "$domain_awl: adding indexes");
+    $self->create_domain_awl_indexes();
+
+    # Update our schema
+    $self->setconfig('version','3');
+}
+
 # Build a connect string for DBI
 sub cnctinfo {
 # Tested with PostgreSQL, MySQL and SQLite
@@ -623,6 +752,9 @@ sub connectdb {
 					)
 	or $self->mylog('dbaccess', 0, "can't connect to DB: $DBI::errstr");
 
+    ## we can't touch dbh if it isn't defined!
+    if (! defined $self->{sqlgrey}{dbh}) { return; }
+
     # mysql drops the connection, we have some glue code
     # to reinit the connection, but better use mysql DBD code
     if ($self->MySQL()) {
@@ -654,7 +786,7 @@ sub create_from_awl_table {
     $self->do("CREATE TABLE $tablename " .
 	      '(sender_name varchar(64) NOT NULL, ' .
 	      'sender_domain varchar(255) NOT NULL, ' .
-	      'src varchar(15) NOT NULL, ' .
+	      'src varchar(39) NOT NULL, ' .
 	      'first_seen timestamp NOT NULL, ' .
 	      'last_seen timestamp NOT NULL, ' .
 	      'PRIMARY KEY ' .
@@ -677,7 +809,7 @@ sub create_domain_awl_table {
     $tablename = ! defined $tablename ? $domain_awl : $tablename;
     $self->do("CREATE TABLE $tablename " .
 	      '(sender_domain varchar(255) NOT NULL, ' .
-	      'src varchar(15) NOT NULL, ' .
+	      'src varchar(39) NOT NULL, ' .
 	      'first_seen timestamp NOT NULL, ' .
 	      'last_seen timestamp NOT NULL, ' .
 	      'PRIMARY KEY (src, sender_domain))')
@@ -702,7 +834,7 @@ sub create_connect_table {
     $self->do("CREATE TABLE $tablename " .
 	      '(sender_name varchar(64) NOT NULL, ' .
 	      'sender_domain varchar(255) NOT NULL, ' .
-	      'src varchar(15) NOT NULL, ' .
+	      'src varchar(39) NOT NULL, ' .
 	      'rcpt varchar(255) NOT NULL, ' .
 	      'first_seen timestamp NOT NULL)')
 	or $self->mydie('create_connect_table',
@@ -728,13 +860,83 @@ sub create_config_table {
 	      "PRIMARY KEY (parameter));")
         or $self->mydie('create_config_table',
 			"Couldn't create table $config: $DBI::errstr");
+    # we just created the table: this is the current version
+    $self->setconfig('version', $DB_VERSION);
+}
+
+sub create_optin_domain_table {
+    my $self = shift;
+    $self->do("CREATE TABLE $optin_domain " .
+	      "(domain varchar(255) NOT NULL, " .
+	      "PRIMARY KEY (domain));")
+	or $self->mydie('create_optin_domain_table',
+			"Couldn't create table $optin_domain: $DBI::errstr");
+}
+
+sub create_optin_email_table {
+    my $self = shift;
+    $self->do("CREATE TABLE $optin_email " .
+	      "(email varchar(255) NOT NULL, " .
+	      "PRIMARY KEY (email));")
+	or $self->mydie('create_optin_email_table',
+			"Couldn't create table $optin_email: $DBI::errstr");
+}
+
+sub create_optout_domain_table {
+    my $self = shift;
+    $self->do("CREATE TABLE $optout_domain " .
+	      "(domain varchar(255) NOT NULL, " .
+	      "PRIMARY KEY (domain));")
+	or $self->mydie('create_optout_domain_table',
+			"Couldn't create table $optout_domain: $DBI::errstr");
+}
+
+sub create_optout_email_table {
+    my $self = shift;
+    $self->do("CREATE TABLE $optout_email " .
+	      "(email varchar(255) NOT NULL, " .
+	      "PRIMARY KEY (email));")
+	or $self->mydie('create_optout_email_table',
+			"Couldn't create table $optout_email: $DBI::errstr");
 }
 
 ##########
 ## Misc ##
 ##########
+
+# don't try too hard to do exact matches here
+sub is_ipv4 {
+    return (/[\d\.]/) ? 1 : 0;
+}
+
+sub is_ipv6 {
+    return (/[0123456789abcdef:]/) ? 1 : 0;
+}
+
 sub class_c {
-    return join('.', (split(/\./, shift))[0..2]);
+    my $addr = shift;
+    if (is_ipv4($addr)) {
+	return join('.', (split(/\./, shift))[0..2]);
+    } elsif (is_ipv6($addr)) {
+	my @splitted = split(/:/, $addr);
+	return join(':', $splitted[0 .. ($#splitted - 2)]);
+    } else {
+	# don't know, don't touch...
+	return $addr;
+    }
+}
+
+sub get_last_addr_part {
+    my $addr = shift;
+    if (is_ipv4($addr)) {
+	return (split(/\./, shift))[3]);
+    } elsif (is_ipv6($addr)) {
+	my @splitted = split(/:/, $addr);
+	return $splitted[$#splitted - 1]);
+    } else {
+	# don't know...
+	return undef;
+    }
 }
 
 #################
@@ -796,13 +998,10 @@ sub normalize_sender {
 # make sure rcpt will be VARCHAR storable
 sub normalize_rcpt {
     my $self = shift;
-    my $to = lc shift;
-    my ($user, $domain) = split(/@/, $to, 2);
-    defined $domain or return substr($to, 0, 255);
 
     # trim to 255 chars ( although "$user" . "@" . "$domain"
     # can be 64 + 1 + 255, VARCHAR is 255 max)
-    return substr("$user\@$domain", 0, 255);
+    return substr($lc shift, 0, 255);
 }
 
 ##########################################
@@ -1139,8 +1338,7 @@ sub cleanup_connect {
     my $self = shift;
     my $max_connect_age = $self->{sqlgrey}{max_connect_age};
 
-    if (defined $self->{server}{log}{spam}
-	&& ($self->{server}{log}{spam} >= 2)) {
+    if ($self->{sqlgrey}{log}{spam} >= 2) {
         # Print probable SPAM:
         my $query = "SELECT sender_name, sender_domain, src, " .
                     "rcpt, first_seen " .
@@ -1473,6 +1671,114 @@ sub is_in_fqdn_whitelist {
     return 0;
 }
 
+####################
+## Optin / Optout ##
+####################
+
+sub greylisting_active {
+    my ($self, $email) = @_;
+    my $domain = split (/@/, $email)[1];
+    if ($self->{sqlgrey}{optmethod} == 'optin') {
+	return (
+		($self->is_in_optin_domain($domain) and
+		 !$self->is_in_optout_email($email))
+		or
+		$self->is_in_optin_email($email)
+		);
+    } else if ($self->{sqlgrey}{optmethod} == 'optout') {
+	return !(
+		($self->is_in_optout_domain($domain) and
+		 !$self->is_in_optin_email($email))
+		or
+		$self->is_in_optout_email($email)
+		);
+    } else {
+	return 1;
+    }
+}
+
+sub is_in_optin_domain {
+    my ($self, $domain) = @_;
+
+    my $sth = $self->prepare_cached("SELECT 1 FROM $optin_domain " .
+				    "WHERE domain = ?");
+    if (!defined $sth or !$sth->execute($domain)) {
+	$self->db_unavailable();
+	$self->mylog('dbaccess', 0, "error: couldn't access $optin_domain table: $DBI::errstr");
+        return 0; # in doubt, no greylisting
+    } else {
+	$self->db_available();
+    }
+    my $result = $sth->fetchall_arrayref();
+    if ($#$result != 0) {
+	return 0; # not a single entry
+    } else {
+	return 1; # one single entry (no multiple entries by design)
+    }
+}
+
+sub is_in_optin_email {
+    my ($self, $name, $domain) = @_;
+
+    my $sth = $self->prepare_cached("SELECT 1 FROM $optin_email " .
+				    "WHERE name = ? " .
+				    "AND domain = ?");
+    if (!defined $sth or !$sth->execute($domain)) {
+	$self->db_unavailable();
+	$self->mylog('dbaccess', 0, "error: couldn't access $optin_email table: $DBI::errstr");
+        return 0; # in doubt, no greylisting
+    } else {
+	$self->db_available();
+    }
+    my $result = $sth->fetchall_arrayref();
+    if ($#$result != 0) {
+	return 0; # not a single entry
+    } else {
+	return 1; # one single entry (no multiple entries by design)
+    }
+}
+
+sub is_in_optout_domain {
+    my ($self, $domain) = @_;
+
+    my $sth = $self->prepare_cached("SELECT 1 FROM $optout_domain " .
+				    "WHERE domain = ?");
+    if (!defined $sth or !$sth->execute($domain)) {
+	$self->db_unavailable();
+	$self->mylog('dbaccess', 0, "error: couldn't access $optout_domain table: $DBI::errstr");
+        return 1; # in doubt, no greylisting
+    } else {
+	$self->db_available();
+    }
+    my $result = $sth->fetchall_arrayref();
+    if ($#$result != 0) {
+	return 0; # not a single entry
+    } else {
+	return 1; # one single entry (no multiple entries by design)
+    }
+}
+
+sub is_in_optout_email {
+    my ($self, $name, $domain) = @_;
+
+    my $sth = $self->prepare_cached("SELECT 1 FROM $optout_email " .
+				    "WHERE name = ? " .
+				    "AND domain = ?");
+    if (!defined $sth or !$sth->execute($domain)) {
+	$self->db_unavailable();
+	$self->mylog('dbaccess', 0, "error: couldn't access $optin_email table: $DBI::errstr");
+        return 1; # in doubt, no greylisting
+    } else {
+	$self->db_available();
+    }
+    my $result = $sth->fetchall_arrayref();
+    if ($#$result != 0) {
+	return 0; # not a single entry
+    } else {
+	return 1; # one single entry (no multiple entries by design)
+    }
+}
+
 #################################
 ## Regexps for smart algorithm ##
 #################################
@@ -1526,6 +1832,7 @@ sub read_dyn_fqdn_regexp {
 sub client_identifier {
     my ($self, $addr, $fqdn) = @_;
     my $greymethod = $self->{sqlgrey}{greymethod};
+    # 'class_c' might not be appropriate for Ipv6...
     my $classc = class_c($addr);
 
     if ($greymethod eq 'full') {
@@ -1541,8 +1848,8 @@ sub client_identifier {
 	}
 
 	# we need the last byte
-	my @bytes = split(/\./, $addr);
-	return $addr unless defined $bytes[3];
+	my $last_part = get_last_addr_part($addr);
+	return $addr unless defined $last_part;
 
         # We use Michel Bouissou's Regexp Horror Museum ;-)
         # Regexp from hell ;-) that sorts out known SMTP servers patterns
@@ -1554,7 +1861,7 @@ sub client_identifier {
         # Regexp from hell ;-) that sorts out known end-user / dynamic
         # pools patterns
         if ($fqdn =~
-	    /(^|[0-9.x_-])((cm?|gv|h|ip|host|m|p(a|c|u)?)?0*$bytes[3]([._-]))/i) {
+	    /(^|[0-9.x_-])((cm?|gv|h|ip|host|m|p(a|c|u)?)?0*$last_part([._-]))/i) {
 	    $self->mylog('grey', 3, "identified dynamic pattern (last IP byte): $fqdn, $addr: Using full IP.");
 	    return $addr;
         }
@@ -1565,7 +1872,7 @@ sub client_identifier {
         }
 
 	# If not specifically identified as dynamic, return C-Class address
-        $self->mylog('grey', 3, "unknown pattern: $fqdn, $classc(.$bytes[3]): using C-class.");
+        $self->mylog('grey', 3, "unknown pattern: $fqdn, $classc(.$last_part): using C-class.");
 	return $classc;
     }
 }
@@ -1601,10 +1908,17 @@ sub smtpd_access_policy($$)
     # whitelist check
     if ($self->is_in_whitelists($sender_name, $sender_domain,
 			       $addr, $fqdn, $recipient)) {
-	$self->mylog('whitelist', 2, "whitelist: $sender_name\@$sender_domain, $addr($fqdn) $recipient");
+	$self->mylog('whitelist', 2, "$sender_name\@$sender_domain, $addr($fqdn) $recipient");
         return $self->{sqlgrey}{prepend} ?
 	    $prepend . 'whitelisted by ' . $software
-	    : 'dunno';
+		: 'dunno';
+    }
+
+    # optin/optout checks
+    if (! $self->greylisting_active($recipient)) {
+	return $self->{sqlgrey}{prepend} ?
+	    $prepend . "greylisting deactivated for $recipient in $software"
+		: 'dunno';
     }
 
     # this is the identifier we use in AWLs
@@ -1717,17 +2031,13 @@ sub read_conffile
     }
     # 2/ apply exceptions
     if (defined $dflt{log_override}) {
-	my @overrides = split(/,/, $dflt{log_override});
+	my @overrides = split(/\s*,\s*/, $dflt{log_override});
 	foreach my $override (@overrides) {
-	    s/^\s+//;       # no leading white
-	    s/\s+$//;       # no trailing white
-	    my ($logtype, $loglevel) = split(/:/, $override);
+	    my ($logtype, $loglevel) = split(/\s*:\s*/, $override);
 	    # some simple checks
 	    if (!defined $loglevel) {
 		die "Invalid log_override format\n";
 	    }
-	    $logtype =~ s/\s+$//; # no trailing white
-	    $loglevel =~ s/^\s+//; # no leading white
 	    if (! defined $dflt{log}{$logtype}){
 		die "Invalid logtype in log_override: $logtype\n";
 	    }
@@ -1839,6 +2149,7 @@ sub main()
 	    db_available    => 1, # used to trigger e-mails
 	    prepend         => $dflt{prepend},
 	    greymethod      => $dflt{greymethod},
+	    optmethod       => $dflt{optmethod},
 	    reject_first    => $dflt{reject_first_attempt},
 	    reject_early    => $dflt{reject_early_reconnect}
 	    			|| $dflt{reject_first_attempt},

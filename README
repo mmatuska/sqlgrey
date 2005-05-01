@@ -13,8 +13,7 @@ Requires :
 
 Documentation :
 
-See POD documentation. Execute:
-
-  perldoc sqlgrey
-
-and the HOWTO
+- POD documentation. Execute:
+  perldoc sqlgrey (or man sqlgrey once installed)
+- the HOWTO
+- the default sqlgrey.conf file

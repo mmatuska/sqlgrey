@@ -1,32 +1,27 @@
+- optin/optout
+
 - make header content user configurable with some predefined macros.
   _DELAY_ for example.
 
-- check the bug reported about .local whitelists not being used anymore
-  
+- add an utility for statistics (reading the logs)
+
+- add automatic blacklisting support (ideas: spamtraps, no reconnect and more than x rejects, ...).
+
+- use time units everywhere to make configuration easier
+
 - bug with multiple connect entries matching a reconnection (only in multiple
   SQLgrey instances configs and in a rare race condition) to fix
   -> accept multiple connect entries in "in_connect(), recently_in_connect()"
   -> remove the delete in "put_in_connect"
 
-- Add IPv6 support
-
-- external cleanup process/experiment with an adaptative cleanup algorithm
-
-- switch from log level to log categories
-
-- add an utility for statistics (reading the logs)
+- experiment with an adaptative cleanup algorithm
 
 - create a stress-testing suite (for performance/reliability tests)
-
-- use time units everywhere to make configuration easier
 
 - check if permission related SQL errors are catchable
 
 - try to exit with a proper error code when database is unavailable or the user
   doesn't have enough rights to access the pid-file
-
-- consider optin/optout (is it easy to do with Postfix? Then provide an HOWTO
-  else code it in SQLgrey)
 
 - add sender e-mail based whitelist with huge warnings
 
