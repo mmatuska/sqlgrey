@@ -63,6 +63,12 @@ if [ $1 = 0 ]; then
 fi
 
 %changelog
+* Mon May 02 2005 Lionel Bouton <lionel-dev@bouton.name>
+ - 1.5.6 release
+ - fix for MySQL disconnection crash
+ - IPv6 support
+ - Optin/optout support
+
 * Tue Apr 25 2005 Lionel Bouton <lionel-dev@bouton.name>
  - 1.5.5 release
  - small fix for SRS (again!)

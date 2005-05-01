@@ -261,7 +261,8 @@ sub table_exists {
     my $tablename = shift;
     # Seems the most portable way to do it
     # but needs SQL error reporting off at connect time :-<
-    $self->do("SELECT 1 from $tablename LIMIT 0")
+    # don't use $self->do here (no need to reconnect on error)
+    $self->{sqlgrey}{dbh}->do("SELECT 1 from $tablename LIMIT 0")
         or return 0;
     return 1;
 }
