@@ -908,17 +908,17 @@ sub create_optout_email_table {
 
 # don't try too hard to do exact matches here
 sub is_ipv4 {
-    return (/[\d\.]/) ? 1 : 0;
+    return ($_ =~ /^[\d\.]*$/) ? 1 : 0;
 }
 
 sub is_ipv6 {
-    return (/[0123456789abcdef:]/) ? 1 : 0;
+    return ($_ =~ /^[0123456789abcdef:]*$/) ? 1 : 0;
 }
 
 sub class_c {
     my $addr = shift;
     if (is_ipv4($addr)) {
-	return join('.', (split(/\./, shift))[0..2]);
+	return join('.', (split(/\./, $addr))[0..2]);
     } elsif (is_ipv6($addr)) {
 	my @splitted = split(/:/, $addr);
 	return join(':', $splitted[0 .. ($#splitted - 2)]);
