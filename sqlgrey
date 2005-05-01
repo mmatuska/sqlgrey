@@ -34,7 +34,7 @@ use POSIX ":sys_wait_h";
 use vars qw(@ISA);
 @ISA = qw(Net::Server::Multiplex);
 
-my $VERSION = "1.5.5";
+my $VERSION = "1.5.6";
 my $software = 'SQLgrey-' . "$VERSION";
 
 my $DB_VERSION = 3;
@@ -73,16 +73,17 @@ $dflt{optmethod}          = 'none'; # or 'optin' or 'optout'
 $dflt{db_cleandelay}	  = 30 * 60;
 $dflt{admin_mail}         = '';
 $dflt{log} = { # note values here are not used
+	      'grey' => 2,
+	      'whitelist' => 2,
+	      'optin' => 2,
+	      'spam' => 2,
 	      'mail' => 2,
 	      'dbaccess' => 2,
 	      'martians' => 2,
-	      'other' => 2,
-	      'spam' => 2,
 	      'perf' => 2,
 	      'system' => 2,
 	      'conf' => 2,
-	      'whitelist' => 2,
-	      'grey' => 2,
+	      'other' => 2,
 	     };
 
 my $CONF_DIR = '/etc/sqlgrey/';
@@ -375,7 +376,7 @@ sub database_setup {
     } else { $noconfig = 0; }
 
     # if config did exist, we have to check the DB version
-    if ($self->currentdbversion($noconfig) < $DB_VERSION)
+    if ($self->currentdbversion($noconfig) < $DB_VERSION) {
 	$self->mylog('dbaccess', 1, "upgrading database from " .
 		   $self->currentdbversion($noconfig) . " to " .
 		   $DB_VERSION);
@@ -617,7 +618,7 @@ sub upgrade2() {
 	$self->create_connect_table('temp');
 	$self->do('INSERT INTO temp (sender_name, sender_domain, ' .
 		  'src, rcpt, first_seen) ' .
-		  'SELECT sender_name, sender_domain, ip_addr, ' .
+		  'SELECT sender_name, sender_domain, src, ' .
 		  'rcpt, first_seen ' .
 		  "FROM $connect");
 	$self->drop_table($connect);
@@ -635,7 +636,7 @@ sub upgrade2() {
     } else {
 	$self->do("INSERT INTO $connect (sender_name, sender_domain, " .
 		  'src, rcpt, first_seen) ' .
-		  'SELECT sender_name, sender_domain, ip_addr, ' .
+		  'SELECT sender_name, sender_domain, src, ' .
 		  'rcpt, first_seen ' .
 		  "FROM $connect" . "old");
 	$self->drop_table("$connect" . "old");
@@ -649,7 +650,7 @@ sub upgrade2() {
 	$self->create_from_awl_table('temp');
 	$self->do("INSERT INTO temp (sender_name, sender_domain, " .
 		  'src, last_seen, first_seen) ' .
-		  'SELECT sender_name, sender_domain, host_ip, last_seen, last_seen ' .
+		  'SELECT sender_name, sender_domain, src, last_seen, last_seen ' .
 		  "FROM $from_awl");
 	$self->drop_table("$from_awl");
     } else {
@@ -669,7 +670,7 @@ sub upgrade2() {
     } else {
 	$self->do("INSERT INTO $from_awl (sender_name, sender_domain, " .
 		  "src, last_seen, first_seen) " .
-		  "SELECT sender_name, sender_domain, host_ip, last_seen, last_seen " .
+		  "SELECT sender_name, sender_domain, src, last_seen, last_seen " .
 		  "FROM $from_awl" . 'old');
 	$self->drop_table("$from_awl" . 'old');
     }
@@ -677,12 +678,12 @@ sub upgrade2() {
     $self->create_from_awl_indexes();
 
     # domain_awl
-    $self->mylog('dbaccess', 2, "$domain_awl: mkaing room for IPv6 in src");
+    $self->mylog('dbaccess', 2, "$domain_awl: making room for IPv6 in src");
     if ($self->SQLite()) {
 	$self->create_domain_awl_table('temp');
 	$self->do("INSERT INTO temp (sender_domain, " .
 		  'src, last_seen, first_seen) ' .
-		  'SELECT sender_domain, host_ip, last_seen, last_seen ' .
+		  'SELECT sender_domain, src, last_seen, last_seen ' .
 		  "FROM $domain_awl");
 	$self->drop_table("$domain_awl");
     } else {
@@ -702,7 +703,7 @@ sub upgrade2() {
     } else {
 	$self->do("INSERT INTO $domain_awl (sender_domain, src, " .
 		  "last_seen, first_seen) " .
-		  "SELECT sender_domain, host_ip, last_seen, last_seen " .
+		  "SELECT sender_domain, src, last_seen, last_seen " .
 		  "FROM $domain_awl" . "old");
 	$self->do("DROP TABLE $domain_awl" . "old");
     }
@@ -929,10 +930,10 @@ sub class_c {
 sub get_last_addr_part {
     my $addr = shift;
     if (is_ipv4($addr)) {
-	return (split(/\./, shift))[3]);
+	return (split(/\./, shift))[3];
     } elsif (is_ipv6($addr)) {
 	my @splitted = split(/:/, $addr);
-	return $splitted[$#splitted - 1]);
+	return $splitted[$#splitted - 1];
     } else {
 	# don't know...
 	return undef;
@@ -1001,7 +1002,7 @@ sub normalize_rcpt {
 
     # trim to 255 chars ( although "$user" . "@" . "$domain"
     # can be 64 + 1 + 255, VARCHAR is 255 max)
-    return substr($lc shift, 0, 255);
+    return substr(lc shift, 0, 255);
 }
 
 ##########################################
@@ -1677,18 +1678,18 @@ sub is_in_fqdn_whitelist {
 
 sub greylisting_active {
     my ($self, $email) = @_;
-    my $domain = split (/@/, $email)[1];
-    if ($self->{sqlgrey}{optmethod} == 'optin') {
+    my $domain = (split(/@/, $email))[1];
+    if ($self->{sqlgrey}{optmethod} eq 'optin') {
 	return (
 		($self->is_in_optin_domain($domain) and
-		 !$self->is_in_optout_email($email))
+		 not $self->is_in_optout_email($email))
 		or
 		$self->is_in_optin_email($email)
 		);
-    } else if ($self->{sqlgrey}{optmethod} == 'optout') {
-	return !(
+    } elsif ($self->{sqlgrey}{optmethod} eq 'optout') {
+ 	return not (
 		($self->is_in_optout_domain($domain) and
-		 !$self->is_in_optin_email($email))
+		 not $self->is_in_optin_email($email))
 		or
 		$self->is_in_optout_email($email)
 		);
@@ -1711,19 +1712,20 @@ sub is_in_optin_domain {
     }
     my $result = $sth->fetchall_arrayref();
     if ($#$result != 0) {
+	$self->mylog('optin', 4, "$domain not in $optin_domain");
 	return 0; # not a single entry
     } else {
+	$self->mylog('optin', 4, "$domain in $optin_domain");
 	return 1; # one single entry (no multiple entries by design)
     }
 }
 
 sub is_in_optin_email {
-    my ($self, $name, $domain) = @_;
+    my ($self, $email) = @_;
 
     my $sth = $self->prepare_cached("SELECT 1 FROM $optin_email " .
-				    "WHERE name = ? " .
-				    "AND domain = ?");
-    if (!defined $sth or !$sth->execute($domain)) {
+				    "WHERE email = ?");
+    if (!defined $sth or !$sth->execute($email)) {
 	$self->db_unavailable();
 	$self->mylog('dbaccess', 0, "error: couldn't access $optin_email table: $DBI::errstr");
         return 0; # in doubt, no greylisting
@@ -1732,8 +1734,10 @@ sub is_in_optin_email {
     }
     my $result = $sth->fetchall_arrayref();
     if ($#$result != 0) {
+	$self->mylog('optin', 4, "$email not in $optin_email");
 	return 0; # not a single entry
     } else {
+	$self->mylog('optin', 4, "$email in $optin_email");
 	return 1; # one single entry (no multiple entries by design)
     }
 }
@@ -1752,19 +1756,20 @@ sub is_in_optout_domain {
     }
     my $result = $sth->fetchall_arrayref();
     if ($#$result != 0) {
+	$self->mylog('optin', 4, "$domain not in $optout_domain");
 	return 0; # not a single entry
     } else {
+	$self->mylog('optin', 4, "$domain in $optout_domain");
 	return 1; # one single entry (no multiple entries by design)
     }
 }
 
 sub is_in_optout_email {
-    my ($self, $name, $domain) = @_;
+    my ($self, $email) = @_;
 
     my $sth = $self->prepare_cached("SELECT 1 FROM $optout_email " .
-				    "WHERE name = ? " .
-				    "AND domain = ?");
-    if (!defined $sth or !$sth->execute($domain)) {
+				    "WHERE email = ?");
+    if (!defined $sth or !$sth->execute($email)) {
 	$self->db_unavailable();
 	$self->mylog('dbaccess', 0, "error: couldn't access $optin_email table: $DBI::errstr");
         return 1; # in doubt, no greylisting
@@ -1773,8 +1778,10 @@ sub is_in_optout_email {
     }
     my $result = $sth->fetchall_arrayref();
     if ($#$result != 0) {
+	$self->mylog('optin', 4, "$email not in $optout_email");
 	return 0; # not a single entry
     } else {
+	$self->mylog('optin', 4, "$email in $optout_email");
 	return 1; # one single entry (no multiple entries by design)
     }
 }
@@ -1916,9 +1923,12 @@ sub smtpd_access_policy($$)
 
     # optin/optout checks
     if (! $self->greylisting_active($recipient)) {
+	$self->mylog('optin', 3, "greylisting deactivated for $recipient");
 	return $self->{sqlgrey}{prepend} ?
 	    $prepend . "greylisting deactivated for $recipient in $software"
 		: 'dunno';
+    } else {
+	$self->mylog('optin', 3, "greylisting active for $recipient");
     }
 
     # this is the identifier we use in AWLs
