@@ -56,6 +56,7 @@ $dflt{user}               = 'sqlgrey';
 $dflt{group}              = 'sqlgrey';
 $dflt{inet}               = '2501';
 $dflt{pidfile}            = '/var/run/sqlgrey.pid';
+$dflt{conf_dir}           = '/etc/sqlgrey';
 $dflt{reconnect_delay}    = 1;            # 1 minute
 $dflt{max_connect_age}    = 24;           # 24 hours
 $dflt{awl_age}            = 60;           # 60 days
@@ -72,6 +73,7 @@ $dflt{greymethod}         = 'smart';
 $dflt{optmethod}          = 'none'; # or 'optin' or 'optout'
 $dflt{db_cleandelay}	  = 30 * 60;
 $dflt{admin_mail}         = '';
+$dflt{log_ident}          = undef;
 $dflt{log} = { # note values here are not used
 	      'grey' => 2,
 	      'whitelist' => 2,
@@ -86,9 +88,9 @@ $dflt{log} = { # note values here are not used
 	      'other' => 2,
 	     };
 
-my $CONF_DIR = '/etc/sqlgrey/';
 # Default configuration file
-my $config_file              = $CONF_DIR . 'sqlgrey.conf';
+my $config_file              = '/etc/sqlgrey/sqlgrey.conf';
+
 # whitelist files
 my $stat_ip_whitelist_file   = $CONF_DIR . 'clients_ip_whitelist';
 my $dyn_ip_whitelist_file    = $CONF_DIR . 'clients_ip_whitelist.local';
@@ -342,7 +344,6 @@ sub update_dbnow {
 # Create tables if not done already
 sub database_setup {
     my $self = shift;
-    my $noconfig = 1;
     # AWL and connect tables checks
     if (! $self->table_exists($from_awl)) {
 	$self->create_from_awl_table();
@@ -374,12 +375,12 @@ sub database_setup {
     if (! $self->table_exists($config)) {
 	$self->create_config_table();
 	$self->setconfig('version',$DB_VERSION);
-    } else { $noconfig = 0; }
+    }
 
     # if config did exist, we have to check the DB version
-    if ($self->currentdbversion($noconfig) < $DB_VERSION) {
+    if ($self->currentdbversion() < $DB_VERSION) {
 	$self->mylog('dbaccess', 1, "upgrading database from " .
-		   $self->currentdbversion($noconfig) . " to " .
+		   $self->currentdbversion() . " to " .
 		   $DB_VERSION);
 	$self->upgradedb();
     }
@@ -458,12 +459,6 @@ sub insertconfig() {
 
 sub currentdbversion() {
     my $self = shift;
-    my $noconfig = shift;
-
-    # Empty DB -> it is created with current version
-    if ($noconfig) {
-	return $DB_VERSION;
-    }
 
     # No config table -> version 0
     if (! $self->table_exists("$config")) {
@@ -684,7 +679,7 @@ sub upgrade2() {
 	$self->create_domain_awl_table('temp');
 	$self->do("INSERT INTO temp (sender_domain, " .
 		  'src, last_seen, first_seen) ' .
-		  'SELECT sender_domain, src, last_seen, last_seen ' .
+		  'SELECT sender_domain, src, last_seen, first_seen ' .
 		  "FROM $domain_awl");
 	$self->drop_table("$domain_awl");
     } else {
@@ -698,13 +693,13 @@ sub upgrade2() {
     if ($self->SQLite()) {
 	$self->do("INSERT INTO $domain_awl (sender_domain, " .
 		  'src, last_seen, first_seen) ' .
-		  'SELECT sender_domain, src, last_seen, last_seen ' .
+		  'SELECT sender_domain, src, last_seen, first_seen ' .
 		  'FROM temp');
 	$self->drop_table('temp');
     } else {
 	$self->do("INSERT INTO $domain_awl (sender_domain, src, " .
 		  "last_seen, first_seen) " .
-		  "SELECT sender_domain, src, last_seen, last_seen " .
+		  "SELECT sender_domain, src, last_seen, first_seen " .
 		  "FROM $domain_awl" . "old");
 	$self->do("DROP TABLE $domain_awl" . "old");
     }
@@ -1242,7 +1237,7 @@ sub in_connect {
     if ($#$result != 0) {
 	return 0; # not a single entry
     } else {
-	return 1; # one single entry (no multiple entries by design)
+	return 1; # at least one entry
     }
 }
 
@@ -1269,20 +1264,13 @@ sub recently_in_connect {
     if ($#$result != 0) {
 	return 0; # not a single entry
     } else {
-	return 1; # one single entry (no multiple entries by design)
+	return 1; # at least one entry
     }
 }
 
 # add a first attempt
 sub put_in_connect {
     my ($self, $sender_name, $sender_domain, $addr, $rcpt) = @_;
-
-    # delete old entries
-    $self->do("DELETE FROM $connect " .
-	      "WHERE sender_name = " . $self->quote($sender_name) .
-	      " AND sender_domain = " . $self->quote($sender_domain) .
-	      " AND src = " . $self->quote($addr) .
-	      " AND rcpt = " . $self->quote($rcpt));
 
     # create new entry
     $self->do("INSERT INTO $connect (sender_name, sender_domain, " .
@@ -1893,10 +1881,6 @@ sub smtpd_access_policy($$)
 {
     my ($self, $attr) = @_;
 
-    # Rejection codes
-    my $reject_first = $self->{sqlgrey}{reject_first};
-    my $reject_early = $self->{sqlgrey}{reject_early};
-
     # prepare lookup
     my ($sender_name,$sender_domain,$deverp_sender_name) =
 	$self->normalize_sender($attr->{sender});
@@ -1917,8 +1901,9 @@ sub smtpd_access_policy($$)
 
     # whitelist check
     if ($self->is_in_whitelists($sender_name, $sender_domain,
-			       $addr, $fqdn, $recipient)) {
-	$self->mylog('whitelist', 2, "$sender_name\@$sender_domain, $addr($fqdn) $recipient");
+				$addr, $fqdn, $recipient)) {
+	$self->mylog('whitelist', 2,
+		     "$sender_name\@$sender_domain, $addr($fqdn) $recipient");
         return $self->{sqlgrey}{prepend} ?
 	    $prepend . 'whitelisted by ' . $software
 		: 'dunno';
@@ -1926,9 +1911,9 @@ sub smtpd_access_policy($$)
 
     # optin/optout checks
     if (! $self->greylisting_active($recipient)) {
-	$self->mylog('optin', 3, "greylisting deactivated for $recipient");
+	$self->mylog('optin', 3, "greylisting inactive for $recipient");
 	return $self->{sqlgrey}{prepend} ?
-	    $prepend . "greylisting deactivated for $recipient in $software"
+	    $prepend . "greylisting inactive for $recipient in $software"
 		: 'dunno';
     } else {
 	$self->mylog('optin', 3, "greylisting active for $recipient");
@@ -1967,8 +1952,8 @@ sub smtpd_access_policy($$)
 				   $cltid, $recipient)) {
         $self->mylog('grey', 2, "early reconnect: $cltid, " .
 	 	      "$sender_name\@$sender_domain -> $recipient");
-	return "$reject_early Greylisted for " .
-	    $self->{sqlgrey}{reconnect_delay} . " minutes";
+	return ($self->{sqlgrey}{reject_early} . " Greylisted for " .
+		$self->{sqlgrey}{reconnect_delay} . " minutes");
     }
     # is it a reconnection ?
     if ($self->in_connect($sender_name, $sender_domain, $cltid, $recipient)) {
@@ -2004,8 +1989,8 @@ sub smtpd_access_policy($$)
     # new connection
     $self->mylog('grey', 2, "new: $cltid, $sender_name\@$sender_domain -> $recipient");
     $self->put_in_connect($sender_name, $sender_domain, $cltid, $recipient);
-    return "$reject_first Greylisted for " .
-	$self->{sqlgrey}{reconnect_delay} . " minutes";
+    return ($self->{sqlgrey}{reject_first} . " Greylisted for " .
+	    $self->{sqlgrey}{reconnect_delay} . " minutes");
 }
 
 sub read_conffile
@@ -2063,6 +2048,15 @@ sub read_conffile
 	    $dflt{log}{$logtype} = $loglevel;
 	}
     }
+    # file locations
+    # whitelist files
+    my $stat_ip_whitelist_file   = $dflt{conf_dir} . 'clients_ip_whitelist';
+    my $dyn_ip_whitelist_file    = $dflt{conf_dir} . 'clients_ip_whitelist.local';
+    my $stat_fqdn_whitelist_file = $dflt{conf_dir} . 'clients_fqdn_whitelist';
+    my $dyn_fqdn_whitelist_file  = $dflt{conf_dir} . 'clients_fqdn_whitelist.local';
+    # regexp files
+    my $smtp_server_regexp_file  = $dflt{conf_dir} . 'smtp_server.regexp';
+    my $dyn_fqdn_regexp_file     = $dflt{conf_dir} . 'dyn_fqdn.regexp';
 }
 
 sub help {
@@ -2139,7 +2133,9 @@ sub main()
             log_file        => $opt{daemonize} ? 'Sys::Syslog' : undef,
             syslog_facility => 'mail',
             syslog_logsock  => 'unix',
-            syslog_ident    => 'sqlgrey',
+            syslog_ident    => defined $dflt{log_ident} ? $dflt{log_ident} :
+		                                          # process name
+		                                          $0 =~ m{.*/(.*)},
 	    syslog_logopt   => 'cons',
         },
         sqlgrey => {

@@ -1,18 +1,13 @@
-- optin/optout
+- add an utility for statistics (reading the logs)
+
+- dsn_awl (for MAIL FROM: <>), connect_awl (first stage before from_awl), rcpt_awl (match forwards)
 
 - make header content user configurable with some predefined macros.
   _DELAY_ for example.
 
-- add an utility for statistics (reading the logs)
-
 - add automatic blacklisting support (ideas: spamtraps, no reconnect and more than x rejects, ...).
 
 - use time units everywhere to make configuration easier
-
-- bug with multiple connect entries matching a reconnection (only in multiple
-  SQLgrey instances configs and in a rare race condition) to fix
-  -> accept multiple connect entries in "in_connect(), recently_in_connect()"
-  -> remove the delete in "put_in_connect"
 
 - experiment with an adaptative cleanup algorithm
 
