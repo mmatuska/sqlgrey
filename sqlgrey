@@ -1903,7 +1903,7 @@ sub smtpd_access_policy($$)
     if ($self->is_in_whitelists($sender_name, $sender_domain,
 				$addr, $fqdn, $recipient)) {
 	$self->mylog('whitelist', 2,
-		     "$sender_name\@$sender_domain, $addr($fqdn) $recipient");
+		     "$sender_name\@$sender_domain, $addr($fqdn) -> $recipient");
         return $self->{sqlgrey}{prepend} ?
 	    $prepend . 'whitelisted by ' . $software
 		: 'dunno';
@@ -2059,10 +2059,6 @@ sub read_conffile
     my $dyn_fqdn_regexp_file     = $dflt{conf_dir} . 'dyn_fqdn.regexp';
 }
 
-sub help {
-    pod2usage(1);
-}
-
 # Setup the environment
 sub main()
 {
@@ -2075,7 +2071,7 @@ sub main()
 	'daemonize|d', 'kill|k')
 	or exit(1);
 
-    if ($opt{help})    { help() }
+    if ($opt{help})    { pod2usage(1) }
     if ($opt{man})     { pod2usage(-exitstatus => 0, -verbose => 2) }
     if ($opt{version}) { print "sqlgrey $VERSION\n"; exit(0) }
 
