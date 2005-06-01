@@ -2,6 +2,7 @@ INSTALL = install
 ETCDIR = $(ROOTDIR)/etc
 CONFDIR = $(ETCDIR)/sqlgrey
 SBINDIR = $(ROOTDIR)/usr/sbin
+BINDIR = $(ROOTDIR)/usr/bin
 INITDIR = $(ETCDIR)/init.d
 MANDIR = $(ROOTDIR)/usr/share/man/man1
 
@@ -25,7 +26,6 @@ manpage:
 clean:
 	rm -f sqlgrey.1
 	rm -f *~ init/*~ etc/*~
-	rm -rf .svn # damn CVS won't remove this one
 
 install: all
 	$(INSTALL) -d -m 755 $(SBINDIR)
@@ -35,11 +35,13 @@ install: all
 	$(INSTALL) -d -m 755 $(MANDIR)
 	$(INSTALL) -m 755 sqlgrey $(SBINDIR)
 	$(INSTALL) -m 755 update_sqlgrey_config $(SBINDIR)
+	$(INSTALL) -m 755 sqlgrey-logstats.pl $(BINDIR)
 	$(INSTALL) -m 644 etc/sqlgrey.conf $(CONFDIR)
 	$(INSTALL) -m 644 etc/clients_ip_whitelist $(CONFDIR)
 	$(INSTALL) -m 644 etc/clients_fqdn_whitelist $(CONFDIR)
 	$(INSTALL) -m 644 etc/dyn_fqdn.regexp $(CONFDIR)
 	$(INSTALL) -m 644 etc/smtp_server.regexp $(CONFDIR)
+	$(INSTALL) -m 644 etc/README $(CONFDIR)
 	$(INSTALL) -m 644 sqlgrey.1 $(MANDIR)
 
 rh-install: install

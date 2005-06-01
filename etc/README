@@ -1,0 +1,11 @@
+README file for sqlgrey updated content
+
+Don't touch these files, they are automatically updated when
+you run update_sqlgrey_config:
+- clients_fqdn_whitelist: don't greylist these DNS names [*]
+- clients_ip_whitelist  : don't greylist these IP addresses [*]
+- dyn_fqdn.regexp       : used by new 'smart' algorithm [x]
+- smtp_server.regexp    : used by new 'smart' algortihm [x]
+
+[*]: in use starting with 1.4.0
+[x]: in use since 1.5.1, regexps looking for known fqdns patterns

@@ -38,6 +38,7 @@ make clean
 /etc/init.d/sqlgrey
 /usr/sbin/sqlgrey
 /usr/sbin/update_sqlgrey_config
+/usr/bin/sqlgrey-logstats.pl
 /usr/share/man/man1/sqlgrey.1*
 %doc README* HOWTO Changelog FAQ TODO
 %defattr(644,root,root)
@@ -46,6 +47,7 @@ make clean
 /etc/sqlgrey/clients_fqdn_whitelist
 /etc/sqlgrey/dyn_fqdn.regexp
 /etc/sqlgrey/smtp_server.regexp
+/etc/sqlgrey/README
 
 %pre
 getent group sqlgrey > /dev/null || /usr/sbin/groupadd sqlgrey
@@ -63,6 +65,12 @@ if [ $1 = 0 ]; then
 fi
 
 %changelog
+* Wed Jun 01 2005 Lionel Bouton <lionel-dev@bouton.name>
+ - 1.5.7 release
+ - fix for a memory leak
+ - config directory now user-configurable
+ - preliminary log analyser
+
 * Mon May 02 2005 Lionel Bouton <lionel-dev@bouton.name>
  - 1.5.6 release
  - fix for MySQL disconnection crash

@@ -44,7 +44,12 @@ sub validate_tstamp {
         return undef;
     }
     my $month = $months{$monthname};
-    my $epoch_seconds = Time::Local::timelocal($sec, $min, $hour, $mday, $month, $self->{YEAR});
+    my $year = $self->{year};
+    if ($month > $self->{month}) {
+	# yes we can compute stats across years...
+	$year--;
+    }
+    my $epoch_seconds = Time::Local::timelocal($sec, $min, $hour, $mday, $month, $year);
     if (! $epoch_seconds) {
 	$self->debug("can't compute timestamp from: $value\n");
         return undef;
@@ -109,7 +114,7 @@ sub parse_args {
     my %opt = ();
 
     GetOptions(\%opt, 'help|h', 'man', 'version', 'yesterday|y', 'today|t',
-	       'lasthour', 'lastday|d', 'lastweek|w', 'programname')
+	       'lasthour', 'lastday|d', 'lastweek|w', 'programname', 'debug')
 	or exit(1);
 
     if ($opt{help})    { pod2usage(1) }
@@ -137,9 +142,12 @@ sub parse_args {
 	$self->lastweek();
 	$count++;
     }
-    if ($count > 1) {
+    if ($count > 1 or $count eq 0) {
 	pod2usage(1);
     }
+
+    # compute year and month for end of data
+    ($self->{month}, $self->{year}) = (localtime($self->{end}))[4,5];
 
     if ($opt{programname}) {
 	$self->{programname} = $opt{programname};
@@ -153,7 +161,7 @@ sub parse_args {
 # quick debug function
 sub debug {
     my $self = shift;
-    if (defined $slef->{debug}) {
+    if (defined $self->{debug}) {
 	print shift;
     }
 }
@@ -161,33 +169,169 @@ sub debug {
 sub split_date_event {
     my ($self, $line) = @_;
 
-    if ($line =~ /^(\w{3} [\d ]\d \d\d:\d\d:\d\d) \w+ $self->{programname}: (\w+): (.*)$/) {
-	my $time = validate_tstamp($1);
-	return ($time, $2; $3);
+#    $self->debug("read: " . $line . "\n");
+    if ($line =~
+	m/^(\w{3} [\d ]\d \d\d:\d\d:\d\d) \w+ $self->{programname}: (\w+): (.*)$/o
+	) {
+	my $time = $self->validate_tstamp($1);
+	if (! defined $time) {
+	    return (undef,undef,undef);
+	} else {
+	    $self->debug("match: $time, $2, $3\n");
+	    return ($time, $2, $3);
+	}
     } else {
 	$self->debug("not matched: $line\n");
 	return (undef,undef,undef);
     }
 }
 
+sub parse_grey {
+    my ($self, $time, $event) = @_;
+    if ($event =~ /^domain awl match: updating ([\d\.]+), (.*)$/) {
+	$self->{events}++;
+	$self->{passed}++;
+	$self->{domain_awl_match}{$1}{$2}++;
+	$self->{domain_awl_match_count}++;
+    } elsif ($event =~ /^from awl match: updating ([\d\.]+), (.*)$/) {
+	$self->{events}++;
+	$self->{passed}++;
+	$self->{from_awl_match}{$1}{$2}++;
+	$self->{from_awl_match_count}++;
+    } elsif ($event =~ /^new: ([\d\.]+), (.*) -> (.*)$/) {
+	$self->{events}++;
+	$self->{new}{$1}++;
+	$self->{new_count}++;
+    } elsif ($event =~ /^early reconnect: ([\d\.]+), (.*) -> (.*)$/) {
+	$self->{events}++;
+	$self->{early}{$1}++;
+	$self->{early_count}++;
+    } elsif ($event =~ /^reconnect ok: ([\d\.]+), (.*) -> (.*) \((.*)\)$/) {
+	$self->{events}++;
+	$self->{passed}++;
+	$self->{reconnect}{$1}++;
+	$self->{reconnect_count}++;
+    } elsif ($event =~ /^domain awl: ([\d\.]+), (.*) added$/) {
+	## what ?
+    } elsif ($event =~ /^from awl: ([\d\.]+), (.*) added$/) {
+	## what ?
+    } else {
+	$self->debug("unknown grey event at $time: $event\n");
+    }
+}
+
+sub parse_whitelist {
+    my ($self, $time, $event) = @_;
+    if ($event =~ /^(.*), (.*)\((.*)\) -> (.*)$/) {
+	$self->{events}++;
+	$self->{passed}++;
+	$self->{whitelisted}++;
+	$self->{whitelisted_ip}{$2}++;
+	$self->{whitelisted_fqdn}{$3}++;
+    } else {
+	$self->debug("unknown whitelist event at $time: $event\n");
+    }
+}
+
+sub parse_spam {
+    my ($self, $time, $event) = @_;
+    if ($event =~ /^([\d\.]+): (.*) -> (.*) at (.*)$/) {
+	$self->{rejected_count}++;
+	$self->{rejected}{$1}++;
+    } else {
+	$self->debug("unknown spam event at $time: $event\n");
+    }
+}
+
+sub parse_perf {
+}
+
 sub parse_line {
     my ($self, $line) = @_;
 
-    my ($time, $type, $event) = split_date_event($line);
+    my ($time, $type, $event) = $self->split_date_event($line);
     if (! defined $time) {
 	return;
     }
     # else parse event
+    if ($type eq 'grey') {
+	$self->parse_grey($time, $event);
+    } elsif ($type eq 'whitelist') {
+	$self->parse_whitelist($time, $event);
+    } elsif ($type eq 'spam') {
+	$self->parse_spam($time, $event);
+    } elsif ($type eq 'perf') {
+	$self->parse_perf($time, $event);
+    } # don't care for other types
+}
+
+sub print_top_awl {
+    my $self = shift;
+    my @top;
+    my $idx;
+    foreach my $ip (keys(%{$self->{domain_awl_match}})) {
+	my $hash;
+	$hash->{count} = 0;
+	$hash->{ip} = $ip;
+	foreach my $domain (keys(%{$self->{domain_awl_match}{$ip}})) {
+	    $hash->{count} += $self->{domain_awl_match}{$ip}{$domain};
+	}
+	$top[$#top+1] = $hash;
+	@top = reverse sort { $a->{count} <=> $b->{count} } @top;
+	pop @top if ($#top >= $self->{top_awl_count});
+    }
+    print "- Domain AWL top " . ($#top + 1) . " sources -\n";
+    for ($idx = 0; $idx <= $#top; $idx++) {
+	my @dtop;
+	foreach my $domain (keys(%{$self->{domain_awl_match}{$top[$idx]->{ip}}})) {
+	    my $hash;
+	    $hash->{count} = $self->{domain_awl_match}{$top[$idx]->{ip}}{$domain};
+	    $hash->{domain} = $domain;
+	    $dtop[$#dtop+1] = $hash;
+	    @dtop = sort { $a->{count} <=> $b->{count} } @dtop;
+	}
+	@dtop = reverse @dtop;
+	print "  $top[$idx]->{ip}: $top[$idx]->{count}\n";
+	for (my $didx = 0; $didx <= $#dtop; $didx++) {
+	    print "    $dtop[$didx]->{domain}: $dtop[$didx]->{count}\n";
+	}
+    }
 }
 
 sub print_stats {
+    my $self = shift;
+    print "-- Global stats --\n";
+    print "Events      : " . $self->{events} . "\n";
+    print "Passed      : " . $self->{passed} . "\n";
+    print "Rejected    : " . $self->{rejected_count} . "\n";
+    print "Delayed     : " . $self->{new_count} . "\n";
+    print "Early       : " . $self->{early_count} . "\n";
+    print "-- Greylisting --\n";
+    print "Domain AWL  : " . $self->{domain_awl_match_count} . "\n";
+    print "From AWL    : " . $self->{from_awl_match_count} . "\n";
+    print "greylisted  : " . $self->{reconnect_count} . "\n";
+    print "-- Whitelisting --\n";
+    print "Whitelisted : " . $self->{whitelisted} . "\n";
+    print "-- AWL details --\n";
+    $self->print_top_awl();
 }
 
 # create parser with no period limits
+# and counters set to 0
 my $parser = bless {
     begin => 0,
     end => (1 << 31) - 1,
     programname => 'sqlgrey',
+    events => 0,
+    passed => 0,
+    whitelisted => 0,
+    rejected_count => 0,
+    new_count => 0,
+    early_count => 0,
+    domain_awl_match_count => 0,
+    from_awl_match_count => 0,
+    reconnect_count => 0,
+    top_awl_count => 10,
 }, 'sqlgrey_logstats';
 
 $parser->parse_args();

@@ -1,3 +1,9 @@
+* Wed Jun 01 2005 Lionel Bouton <lionel-dev@bouton.name>
+ - 1.5.7 release
+ - fix for a memory leak
+ - config directory now user-configurable
+ - preliminary log analyser
+
 * Mon May 02 2005 Lionel Bouton <lionel-dev@bouton.name>
  - 1.5.6 release
  - fix for MySQL disconnection crash
