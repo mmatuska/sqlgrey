@@ -1,3 +1,7 @@
+* Thu Jun 02 2005 Lionel Bouton <lionel-dev@bouton.name>
+ - 1.5.8 release
+ - fix for Makefile: rpmbuild didn't work
+ 
 * Wed Jun 01 2005 Lionel Bouton <lionel-dev@bouton.name>
  - 1.5.7 release
  - fix for a memory leak

@@ -33,6 +33,7 @@ install: all
 	$(INSTALL) -d -m 755 $(CONFDIR)
 	$(INSTALL) -d -m 755 $(INITDIR)
 	$(INSTALL) -d -m 755 $(MANDIR)
+	$(INSTALL) -d -m 755 $(BINDIR)
 	$(INSTALL) -m 755 sqlgrey $(SBINDIR)
 	$(INSTALL) -m 755 update_sqlgrey_config $(SBINDIR)
 	$(INSTALL) -m 755 sqlgrey-logstats.pl $(BINDIR)
