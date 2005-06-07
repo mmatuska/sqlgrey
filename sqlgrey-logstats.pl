@@ -28,7 +28,7 @@ use Getopt::Long qw(:config posix_default no_ignore_case);
 use Time::Local;
 use Date::Calc;
 
-my $VERSION = '1.5.8';
+my $VERSION = "1.5.9";
 
 ######################
 # Time-related methods

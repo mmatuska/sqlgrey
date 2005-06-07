@@ -9,16 +9,16 @@ MANDIR = $(ROOTDIR)/usr/share/man/man1
 VERSION := $(shell cat VERSION)
 TBZ2 = sqlgrey-$(VERSION).tar.bz2
 
-all: manpage sqlgrey-recreate sqlgrey.spec-recreate
+all: manpage update-version
 
-sqlgrey-recreate:
+update-version:
 	cat sqlgrey | sed 's/^my $$VERSION = .*;/my $$VERSION = "$(VERSION)";/' > sqlgrey.new
 	mv sqlgrey.new sqlgrey
 	chmod a+x sqlgrey
-
-sqlgrey.spec-recreate:
 	cat sqlgrey.spec | sed 's/^%define ver  .*/%define ver  $(VERSION)/' > sqlgrey.spec.new
 	mv sqlgrey.spec.new sqlgrey.spec
+	cat sqlgrey-logstats.pl | sed 's/^my $$VERSION = .*;/my $$VERSION = "$(VERSION)";/' > sqlgrey-logstats.pl.new
+	mv sqlgrey-logstats.pl.new sqlgrey-logstats.pl
 
 manpage:
 	perldoc -u sqlgrey | pod2man -n sqlgrey > sqlgrey.1
