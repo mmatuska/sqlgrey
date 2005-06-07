@@ -28,8 +28,10 @@ use Getopt::Long qw(:config posix_default no_ignore_case);
 use Time::Local;
 use Date::Calc;
 
-my $VERSION = '1.5.6';
+my $VERSION = '1.5.8';
 
+######################
+# Time-related methods
 my %months = ( "Jan" => 0, "Feb" => 1, "Mar" => 2, "Apr" => 3, "May" => 4, "Jun" => 5,
 	       "Jul" => 6, "Aug" => 7, "Sep" => 8, "Oct" => 9, "Nov" => 10, "Dec" => 11 );
 
@@ -72,7 +74,7 @@ sub yesterday_tstamp {
 
 # What was the tstamp today at 00:00 ?
 sub today_tstamp {
-    # Get today 00:00:00 and deduce one day
+    # Get today 00:00:00
     return Time::Local::timelocal(0, 0, 0, ((localtime())[3,4,5]));
 }
 
@@ -86,6 +88,7 @@ sub yesterday {
 sub today {
     my $self = shift;
     $self->{begin} = $self->today_tstamp();
+    $self->{end} = time();
 }
 
 sub lasthour {
@@ -109,13 +112,16 @@ sub lastweek {
     $self->{end} = $now;
 }
 
+##################
+# Argument parsing
 sub parse_args {
     my $self = shift;
     my %opt = ();
 
     GetOptions(\%opt, 'help|h', 'man', 'version', 'yesterday|y', 'today|t',
-	       'lasthour', 'lastday|d', 'lastweek|w', 'programname', 'debug')
-	or exit(1);
+	       'lasthour', 'lastday|d', 'lastweek|w', 'programname', 'debug',
+	       'top-domain=i', 'top-from=i', 'top-spam=i', 'print-delayed')
+	or pod2usage(1);
 
     if ($opt{help})    { pod2usage(1) }
     if ($opt{man})     { pod2usage(-exitstatus => 0, -verbose => 2) }
@@ -142,8 +148,22 @@ sub parse_args {
 	$self->lastweek();
 	$count++;
     }
-    if ($count > 1 or $count eq 0) {
+    if ($count > 1) {
 	pod2usage(1);
+    }
+
+    if ($opt{'top-domain'}) {
+	$self->{top_domain} = $opt{'top-domain'};
+    }
+    if ($opt{'top-from'}) {
+	$self->{top_from} = $opt{'top-from'};
+    }
+    if ($opt{'top-spam'}) {
+	$self->{top_spam} = $opt{'top-spam'};
+    }
+
+    if ($opt{'print-delayed'}) {
+	$self->{print_delayed} = 1;
     }
 
     # compute year and month for end of data
@@ -158,6 +178,17 @@ sub parse_args {
     }
 }
 
+################
+# percent string
+sub percent {
+    my $portion = shift;
+    my $total = shift;
+    if ($total == 0) {
+	return "N/A%";
+    }
+    return sprintf ("%.2f%%", ($portion / $total) * 100);
+}
+
 # quick debug function
 sub debug {
     my $self = shift;
@@ -169,7 +200,6 @@ sub debug {
 sub split_date_event {
     my ($self, $line) = @_;
 
-#    $self->debug("read: " . $line . "\n");
     if ($line =~
 	m/^(\w{3} [\d ]\d \d\d:\d\d:\d\d) \w+ $self->{programname}: (\w+): (.*)$/o
 	) {
@@ -177,7 +207,7 @@ sub split_date_event {
 	if (! defined $time) {
 	    return (undef,undef,undef);
 	} else {
-	    $self->debug("match: $time, $2, $3\n");
+	    #$self->debug("match: $time, $2, $3\n");
 	    return ($time, $2, $3);
 	}
     } else {
@@ -206,15 +236,19 @@ sub parse_grey {
 	$self->{events}++;
 	$self->{early}{$1}++;
 	$self->{early_count}++;
-    } elsif ($event =~ /^reconnect ok: ([\d\.]+), (.*) -> (.*) \((.*)\)$/) {
+    } elsif ($event =~ /^reconnect ok: ([\d\.]+), (.*) -> (.*) \((.*)\)/) {
 	$self->{events}++;
 	$self->{passed}++;
-	$self->{reconnect}{$1}++;
+	$self->{reconnect}{$1}{$2}++;
 	$self->{reconnect_count}++;
     } elsif ($event =~ /^domain awl: ([\d\.]+), (.*) added$/) {
-	## what ?
+	## what?
     } elsif ($event =~ /^from awl: ([\d\.]+), (.*) added$/) {
-	## what ?
+	## what?
+    } elsif ($event =~ /^from awl: [\d\.]+, .* added/) {
+	## what?
+    } elsif ($event =~ /^domain awl: [\d\.]+, .* added/) {
+	## what?
     } else {
 	$self->debug("unknown grey event at $time: $event\n");
     }
@@ -222,7 +256,7 @@ sub parse_grey {
 
 sub parse_whitelist {
     my ($self, $time, $event) = @_;
-    if ($event =~ /^(.*), (.*)\((.*)\) -> (.*)$/) {
+    if ($event =~ /^(.*), ([\d\.]+)\((.*)\) -> (.*)$/) {
 	$self->{events}++;
 	$self->{passed}++;
 	$self->{whitelisted}++;
@@ -237,7 +271,7 @@ sub parse_spam {
     my ($self, $time, $event) = @_;
     if ($event =~ /^([\d\.]+): (.*) -> (.*) at (.*)$/) {
 	$self->{rejected_count}++;
-	$self->{rejected}{$1}++;
+	$self->{rejected}{$1}{$2}++;
     } else {
 	$self->debug("unknown spam event at $time: $event\n");
     }
@@ -265,7 +299,13 @@ sub parse_line {
     } # don't care for other types
 }
 
-sub print_top_awl {
+sub print_awl {
+    my $self = shift;
+    $self->print_domain_awl();
+    $self->print_from_awl();
+}
+
+sub print_domain_awl {
     my $self = shift;
     my @top;
     my $idx;
@@ -278,9 +318,17 @@ sub print_top_awl {
 	}
 	$top[$#top+1] = $hash;
 	@top = reverse sort { $a->{count} <=> $b->{count} } @top;
-	pop @top if ($#top >= $self->{top_awl_count});
+	pop @top if (($self->{top_domain} != -1) && ($#top >= $self->{top_domain}));
     }
-    print "- Domain AWL top " . ($#top + 1) . " sources -\n";
+    if ($self->{top_domain} != -1) {
+	print "--------------------------------\n". 
+	    "  Domain AWL top " . ($#top + 1) . " sources\n" .
+	    "--------------------------------\n\n";
+    } else {
+	print "---------------------\n" .
+	    "  Domain AWL full\n" .
+	    "---------------------\n\n";
+    }
     for ($idx = 0; $idx <= $#top; $idx++) {
 	my @dtop;
 	foreach my $domain (keys(%{$self->{domain_awl_match}{$top[$idx]->{ip}}})) {
@@ -291,29 +339,174 @@ sub print_top_awl {
 	    @dtop = sort { $a->{count} <=> $b->{count} } @dtop;
 	}
 	@dtop = reverse @dtop;
-	print "  $top[$idx]->{ip}: $top[$idx]->{count}\n";
+	print "$top[$idx]->{ip}: $top[$idx]->{count}\n";
 	for (my $didx = 0; $didx <= $#dtop; $didx++) {
-	    print "    $dtop[$didx]->{domain}: $dtop[$didx]->{count}\n";
+	    print "            $dtop[$didx]->{domain}: $dtop[$didx]->{count}\n";
 	}
     }
+    print "\n";
+}
+
+sub print_from_awl {
+    my $self = shift;
+    my @top;
+    my $idx;
+    foreach my $ip (keys(%{$self->{from_awl_match}})) {
+	my $hash;
+	$hash->{count} = 0;
+	$hash->{ip} = $ip;
+	foreach my $from (keys(%{$self->{from_awl_match}{$ip}})) {
+	    $hash->{count} += $self->{from_awl_match}{$ip}{$from};
+	}
+	$top[$#top+1] = $hash;
+	@top = reverse sort { $a->{count} <=> $b->{count} } @top;
+	pop @top if (($self->{top_from} != -1) && ($#top >= $self->{top_from}));
+    }
+    if ($self->{top_from} != -1) {
+	print "----------------------------\n". 
+	    "  From AWL top " . ($#top + 1) . " sources\n" .
+	    "----------------------------\n\n";
+    } else {
+	print "-----------------\n" .
+	    "  From AWL full\n" .
+	    "-----------------\n\n";
+    }
+    for ($idx = 0; $idx <= $#top; $idx++) {
+	my @ftop;
+	foreach my $from (keys(%{$self->{from_awl_match}{$top[$idx]->{ip}}})) {
+	    my $hash;
+	    $hash->{count} = $self->{from_awl_match}{$top[$idx]->{ip}}{$from};
+	    $hash->{from} = $from;
+	    $ftop[$#ftop+1] = $hash;
+	    @ftop = sort { $a->{count} <=> $b->{count} } @ftop;
+	}
+	@ftop = reverse @ftop;
+	print "$top[$idx]->{ip}: $top[$idx]->{count}\n";
+	for (my $didx = 0; $didx <= $#ftop; $didx++) {
+	    print "            $ftop[$didx]->{from}: $ftop[$didx]->{count}\n";
+	}
+    }
+    print "\n";
+}
+
+sub print_spam {
+    my $self = shift;
+    my @top;
+    my $idx;
+    foreach my $ip (keys(%{$self->{rejected}})) {
+	my $hash;
+	$hash->{count} = 0;
+	$hash->{ip} = $ip;
+	foreach my $from (keys(%{$self->{rejected}{$ip}})) {
+	    $hash->{count} += $self->{rejected}{$ip}{$from};
+	}
+	$top[$#top+1] = $hash;
+	@top = reverse sort { $a->{count} <=> $b->{count} } @top;
+	pop @top if (($self->{top_spam} != -1) && ($#top >= $self->{top_spam}));
+    }
+    if ($self->{top_from} != -1) {
+	print "------------------------\n". 
+	    "  SPAM top " . ($#top + 1) . " sources\n" .
+	    "------------------------\n\n";
+    } else {
+	print "-------------\n" .
+	    "  SPAM full\n" .
+	    "-------------\n\n";
+    }
+    for ($idx = 0; $idx <= $#top; $idx++) {
+	my @stop;
+	foreach my $from (keys(%{$self->{rejected}{$top[$idx]->{ip}}})) {
+	    my $hash;
+	    $hash->{count} = $self->{rejected}{$top[$idx]->{ip}}{$from};
+	    $hash->{from} = $from;
+	    $stop[$#stop+1] = $hash;
+	    @stop = sort { $a->{count} <=> $b->{count} } @stop;
+	}
+	@stop = reverse @stop;
+	print "$top[$idx]->{ip}: $top[$idx]->{count}\n";
+	for (my $didx = 0; $didx <= $#stop; $didx++) {
+	    print "            $stop[$didx]->{from}: $stop[$didx]->{count}\n";
+	}
+    }
+    print "\n";
+}
+
+sub print_delayed {
+    my $self = shift;
+    if (! defined $self->{print_delayed}) {
+	return;
+    }
+    my @top;
+    my $idx;
+    foreach my $ip (keys(%{$self->{reconnect}})) {
+	my $hash;
+	$hash->{count} = 0;
+	$hash->{ip} = $ip;
+	foreach my $from (keys(%{$self->{reconnect}{$ip}})) {
+	    $hash->{count} += $self->{reconnect}{$ip}{$from};
+	}
+	$top[$#top+1] = $hash;
+	@top = reverse sort { $a->{count} <=> $b->{count} } @top;
+    }
+    print "#####################\n" .
+	"## Delayed details ##\n" .
+	"#####################\n\n";
+    for ($idx = 0; $idx <= $#top; $idx++) {
+	my @stop;
+	foreach my $from (keys(%{$self->{reconnect}{$top[$idx]->{ip}}})) {
+	    my $hash;
+	    $hash->{count} = $self->{reconnect}{$top[$idx]->{ip}}{$from};
+	    $hash->{from} = $from;
+	    $stop[$#stop+1] = $hash;
+	    @stop = sort { $a->{count} <=> $b->{count} } @stop;
+	}
+	@stop = reverse @stop;
+	print "$top[$idx]->{ip}: $top[$idx]->{count}\n";
+	for (my $didx = 0; $didx <= $#stop; $didx++) {
+	    print "            $stop[$didx]->{from}: $stop[$didx]->{count}\n";
+	}
+    }
+    print "\n";
 }
 
 sub print_stats {
     my $self = shift;
-    print "-- Global stats --\n";
+    print "##################\n" .
+	"## Global stats ##\n" .
+	"##################\n\n";
     print "Events      : " . $self->{events} . "\n";
     print "Passed      : " . $self->{passed} . "\n";
     print "Rejected    : " . $self->{rejected_count} . "\n";
-    print "Delayed     : " . $self->{new_count} . "\n";
     print "Early       : " . $self->{early_count} . "\n";
-    print "-- Greylisting --\n";
-    print "Domain AWL  : " . $self->{domain_awl_match_count} . "\n";
-    print "From AWL    : " . $self->{from_awl_match_count} . "\n";
-    print "greylisted  : " . $self->{reconnect_count} . "\n";
-    print "-- Whitelisting --\n";
-    print "Whitelisted : " . $self->{whitelisted} . "\n";
-    print "-- AWL details --\n";
-    $self->print_top_awl();
+    print "\n###############################\n" .
+	"## Whitelist/AWL performance ##\n" .
+	"###############################\n\n";
+    print "Whitelists  : " .
+        percent($self->{whitelisted}, $self->{passed}) .
+	"\t($self->{whitelisted})\n";
+    print "Domain AWL  : " .
+        percent($self->{domain_awl_match_count}, $self->{passed}) .
+        "\t($self->{domain_awl_match_count})\n";
+    print "From AWL    : " .
+	percent($self->{from_awl_match_count}, $self->{passed}) .
+	"\t($self->{from_awl_match_count})\n";
+    print "Delayed     : " .
+	percent($self->{reconnect_count},$self->{passed}) .
+	"\t($self->{reconnect_count})\n";
+#     print "\n#######################\n" .
+# 	"## Whitelist details ##\n" .
+# 	"#######################\n\n";
+#     $self->print_whitelist();
+    print "\n#################\n" .
+	"## AWL details ##\n" .
+	"#################\n\n";
+    $self->print_awl();
+    print "\n##################\n" .
+	"## SPAM details ##\n" .
+	"##################\n\n";
+    $self->print_spam();
+
+    $self->print_delayed();
 }
 
 # create parser with no period limits
@@ -331,7 +524,9 @@ my $parser = bless {
     domain_awl_match_count => 0,
     from_awl_match_count => 0,
     reconnect_count => 0,
-    top_awl_count => 10,
+    top_domain => -1,
+    top_from => -1,
+    top_spam => -1,
 }, 'sqlgrey_logstats';
 
 $parser->parse_args();
@@ -351,7 +546,7 @@ sqlgrey-logstats.pl - SQLgrey log parser
 
 =head1 SYNOPSIS
 
-B<sqlgrey-logstats.pl> [I<options>...]
+B<sqlgrey-logstats.pl> [I<options>...] < syslogfile
 
  -h, --help             display this help and exit
      --man              display man page
@@ -363,6 +558,13 @@ B<sqlgrey-logstats.pl> [I<options>...]
      --lasthour         compute stats for last hour
  -d, --lastday          compute stats for last 24 hours
  -w, --lastweek         compute stats for last 7 days
+
+     --programname      program name looked into log file
+
+     --top-from         how many from AWL entries to print (default: all)
+     --top-domain       how many domain AWL entries to print (default: all)
+     --top-spam         how many SPAM sources to print (default: all)
+     --print-delayed    print delayed sources (default: don't)
 
 =head1 DESCRIPTION
 
