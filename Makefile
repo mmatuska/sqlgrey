@@ -19,6 +19,7 @@ update-version:
 	mv sqlgrey.spec.new sqlgrey.spec
 	cat sqlgrey-logstats.pl | sed 's/^my $$VERSION = .*;/my $$VERSION = "$(VERSION)";/' > sqlgrey-logstats.pl.new
 	mv sqlgrey-logstats.pl.new sqlgrey-logstats.pl
+	chmod a+x sqlgrey-logstats.pl
 
 manpage:
 	perldoc -u sqlgrey | pod2man -n sqlgrey > sqlgrey.1
@@ -51,7 +52,7 @@ rh-install: install
 gentoo-install: install
 	$(INSTALL) init/sqlgrey.gentoo $(INITDIR)/sqlgrey
 
-tbz2: all clean
+tbz2: update-version clean
 	cd ..;ln -s sqlgrey sqlgrey-$(VERSION);tar cjhf $(TBZ2) sqlgrey-$(VERSION);rm sqlgrey-$(VERSION)
 
 rpm: tbz2
