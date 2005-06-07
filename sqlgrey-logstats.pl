@@ -405,13 +405,9 @@ sub print_spam {
 	pop @top if (($self->{top_spam} != -1) && ($#top >= $self->{top_spam}));
     }
     if ($self->{top_from} != -1) {
-	print "------------------------\n". 
-	    "  SPAM top " . ($#top + 1) . " sources\n" .
-	    "------------------------\n\n";
-    } else {
-	print "-------------\n" .
-	    "  SPAM full\n" .
-	    "-------------\n\n";
+	print "--------------------\n". 
+	    "   top " . ($#top + 1) . " sources\n" .
+	    "--------------------\n\n";
     }
     for ($idx = 0; $idx <= $#top; $idx++) {
 	my @stop;
@@ -448,9 +444,6 @@ sub print_delayed {
 	$top[$#top+1] = $hash;
 	@top = reverse sort { $a->{count} <=> $b->{count} } @top;
     }
-    print "#####################\n" .
-	"## Delayed details ##\n" .
-	"#####################\n\n";
     for ($idx = 0; $idx <= $#top; $idx++) {
 	my @stop;
 	foreach my $from (keys(%{$self->{reconnect}{$top[$idx]->{ip}}})) {
@@ -505,7 +498,9 @@ sub print_stats {
 	"## SPAM details ##\n" .
 	"##################\n\n";
     $self->print_spam();
-
+    print "#####################\n" .
+	"## Delayed details ##\n" .
+	"#####################\n\n";
     $self->print_delayed();
 }
 

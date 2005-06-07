@@ -1129,7 +1129,7 @@ sub update_from_awl {
     my ($self, $sender_name, $sender_domain, $host) = @_;
 
     $self->do("UPDATE $from_awl " .
-	      'SET last_seen = NOW(), first_seen = first_seen' .
+	      'SET last_seen = NOW(), first_seen = first_seen ' .
 	      'WHERE sender_name = ' . $self->quote($sender_name) .
 	      ' AND sender_domain = ' . $self->quote($sender_domain) .
 	      ' AND src = ' . $self->quote($host));
@@ -1139,7 +1139,7 @@ sub update_domain_awl {
     my ($self, $sender_domain, $host) = @_;
 
     $self->do("UPDATE $domain_awl " .
-	      'SET last_seen = NOW(), first_seen = first_seen' .
+	      'SET last_seen = NOW(), first_seen = first_seen ' .
 	      'WHERE sender_domain = ' . $self->quote($sender_domain) .
 	      ' AND src = ' . $self->quote($host));
 }
