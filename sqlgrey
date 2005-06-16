@@ -2021,7 +2021,7 @@ sub read_conffile
     if (defined $optional_file) {
 	$config_file = $optional_file;
     }
-    print "reading $config_file\n";
+
     # Check if conf file is readable if explicitly told to use one
     if (defined $optional_file) {
 	open(CONF, '<' . $config_file)

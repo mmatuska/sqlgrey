@@ -24,8 +24,8 @@ stop() {
 }
 
 # hack: seems Net::Server doesn't set REUSEADDR on socket?
-restart() {
-	stop();
-	sleep 1;
-	start();
+svc_restart() {
+	svc_stop
+	sleep 1
+	svc_start
 }
