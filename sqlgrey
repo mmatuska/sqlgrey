@@ -34,7 +34,7 @@ use POSIX ':sys_wait_h';
 use vars qw(@ISA);
 @ISA = qw(Net::Server::Multiplex);
 
-my $VERSION = "1.5.9";
+my $VERSION = "1.6.0";
 my $software = 'SQLgrey-' . $VERSION;
 
 my $DB_VERSION = 3;
@@ -57,7 +57,7 @@ $dflt{group}              = 'sqlgrey';
 $dflt{inet}               = '2501';
 $dflt{pidfile}            = '/var/run/sqlgrey.pid';
 $dflt{conf_dir}           = '/etc/sqlgrey';
-$dflt{reconnect_delay}    = 1;            # 1 minute
+$dflt{reconnect_delay}    = 5;            # 5 minutes
 $dflt{max_connect_age}    = 24;           # 24 hours
 $dflt{awl_age}            = 60;           # 60 days
 $dflt{group_domain_level} = 2;            # 2 e-mail addr from same domain/IP
@@ -1853,7 +1853,6 @@ sub read_dyn_fqdn_regexp {
 sub client_identifier {
     my ($self, $addr, $fqdn) = @_;
     my $greymethod = $self->{sqlgrey}{greymethod};
-    # 'class_c' might not be appropriate for Ipv6...
     my $classc = class_c($addr);
 
     if ($greymethod eq 'full') {
@@ -1875,7 +1874,7 @@ sub client_identifier {
         # We use Michel Bouissou's Regexp Horror Museum ;-)
         # Regexp from hell ;-) that sorts out known SMTP servers patterns
         if ($fqdn =~ $self->{sqlgrey}{smtp_server_re}) {
-	    $self->mylog('grey', 3, "identified SMTP server pattern: $fqdn, $classc: Using C-class.");
+	    $self->mylog('grey', 3, "identified SMTP server pattern: $fqdn, $addr: Using C-class ($classc).");
 	    return $classc;
         }
 
@@ -1893,7 +1892,7 @@ sub client_identifier {
         }
 
 	# If not specifically identified as dynamic, return C-Class address
-        $self->mylog('grey', 3, "unknown pattern: $fqdn, $classc(.$last_part): using C-class.");
+        $self->mylog('grey', 3, "unknown pattern: $fqdn, $addr: using C-class ($classc).");
 	return $classc;
     }
 }
@@ -1953,7 +1952,7 @@ sub smtpd_access_policy($$)
     }
     # domain scale awl check
     if ($self->is_in_domain_awl($sender_domain, $cltid)) {
-	$self->mylog('grey', 2, "domain awl match: updating $cltid, $sender_domain");
+	$self->mylog('grey', 2, "domain awl match: updating $cltid($addr), $sender_domain");
 	# update awl entry
 	$self->update_domain_awl($sender_domain, $cltid);
 	return $self->{sqlgrey}{prepend} ?
@@ -1962,7 +1961,7 @@ sub smtpd_access_policy($$)
     }
     # address scale awl check
     if ($self->is_in_from_awl($deverp_sender_name, $sender_domain, $cltid)) {
-	$self->mylog('grey', 2, "from awl match: updating $cltid, " .
+	$self->mylog('grey', 2, "from awl match: updating $cltid($addr), " .
 		      "$sender_name\@$sender_domain");
 	# update awl entry
 	$self->update_from_awl($deverp_sender_name, $sender_domain, $cltid);
@@ -1973,7 +1972,7 @@ sub smtpd_access_policy($$)
     # is it an early reconnect ?
     if ($self->recently_in_connect($sender_name, $sender_domain,
 				   $cltid, $recipient)) {
-        $self->mylog('grey', 2, "early reconnect: $cltid, " .
+        $self->mylog('grey', 2, "early reconnect: $cltid($addr), " .
 	 	      "$sender_name\@$sender_domain -> $recipient");
 	return ($self->{sqlgrey}{reject_early} . ' Greylisted for ' .
 		$self->{sqlgrey}{reconnect_delay} . ' minutes');
@@ -1983,7 +1982,7 @@ sub smtpd_access_policy($$)
 	my ($first_seen, $delay) =
 	    $self->get_reconnect_delay($sender_name, $sender_domain,
 				       $cltid, $recipient);
-        $self->mylog('grey', 2, "reconnect ok: $cltid, $sender_name" . '@' . $sender_domain .
+        $self->mylog('grey', 2, "reconnect ok: $cltid($addr), $sender_name" . '@' . $sender_domain .
 		      " -> $recipient ($delay)");
 	# check if we have others from the same domain in the from_awl
 	# add 1 for our sample and compare to the aggregation level
@@ -2010,7 +2009,7 @@ sub smtpd_access_policy($$)
 	    $prepend . "delayed $delay by $software" : 'dunno';
     }
     # new connection
-    $self->mylog('grey', 2, "new: $cltid, $sender_name\@$sender_domain -> $recipient");
+    $self->mylog('grey', 2, "new: $cltid($addr), $sender_name\@$sender_domain -> $recipient");
     $self->put_in_connect($sender_name, $sender_domain, $cltid, $recipient);
     return ($self->{sqlgrey}{reject_first} . ' Greylisted for ' .
 	    $self->{sqlgrey}{reconnect_delay} . ' minutes');
@@ -2022,6 +2021,7 @@ sub read_conffile
     if (defined $optional_file) {
 	$config_file = $optional_file;
     }
+    print "reading $config_file\n";
     # Check if conf file is readable if explicitly told to use one
     if (defined $optional_file) {
 	open(CONF, '<' . $config_file)
@@ -2073,13 +2073,13 @@ sub read_conffile
     }
     # file locations
     # whitelist files
-    my $stat_ip_whitelist_file   = $dflt{conf_dir} . '/clients_ip_whitelist';
-    my $dyn_ip_whitelist_file    = $dflt{conf_dir} . '/clients_ip_whitelist.local';
-    my $stat_fqdn_whitelist_file = $dflt{conf_dir} . '/clients_fqdn_whitelist';
-    my $dyn_fqdn_whitelist_file  = $dflt{conf_dir} . '/clients_fqdn_whitelist.local';
+    $stat_ip_whitelist_file   = $dflt{conf_dir} . '/clients_ip_whitelist';
+    $dyn_ip_whitelist_file    = $dflt{conf_dir} . '/clients_ip_whitelist.local';
+    $stat_fqdn_whitelist_file = $dflt{conf_dir} . '/clients_fqdn_whitelist';
+    $dyn_fqdn_whitelist_file  = $dflt{conf_dir} . '/clients_fqdn_whitelist.local';
     # regexp files
-    my $smtp_server_regexp_file  = $dflt{conf_dir} . '/smtp_server.regexp';
-    my $dyn_fqdn_regexp_file     = $dflt{conf_dir} . '/dyn_fqdn.regexp';
+    $smtp_server_regexp_file  = $dflt{conf_dir} . '/smtp_server.regexp';
+    $dyn_fqdn_regexp_file     = $dflt{conf_dir} . '/dyn_fqdn.regexp';
 }
 
 # Setup the environment

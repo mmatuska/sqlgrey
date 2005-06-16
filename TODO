@@ -1,4 +1,12 @@
-- add an utility for statistics (reading the logs)
+* 1.6.0
+
+- fix conf_dir handling
+
+- cleanup utility for statistics
+
+* 1.7.x
+
+- tarpitting
 
 - dsn_awl (for MAIL FROM: <>), connect_awl (first stage before from_awl), rcpt_awl (match forwards)
 

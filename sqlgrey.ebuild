@@ -11,7 +11,7 @@ HOMEPAGE="http://sqlgrey.sourceforge.net/"
 LICENSE="GPL-2"
 SLOT="0"
 IUSE="mysql postgres sqlite"
-DEPEND="dev-lang/perl
+RDEPEND="dev-lang/perl
 	dev-perl/DBI
 	dev-perl/net-server
 	|| ( postgres? ( dev-perl/DBD-Pg )
@@ -19,7 +19,8 @@ DEPEND="dev-lang/perl
 		mysql? ( dev-perl/DBD-mysql )
 		dev-perl/DBD-Pg
 	)"
-RDEPEND="sys-apps/sed"
+DEPEND="$RDEPEND
+	sys-apps/sed"
 KEYWORDS="~x86 ~amd64"
 
 pkg_setup() {
@@ -31,7 +32,7 @@ pkg_setup() {
 src_install () {
 	make gentoo-install ROOTDIR=${D}
 	prepall
-	dodoc HOWTO FAQ README README.OPTINOUT COPYING TODO Changelog
+	dodoc HOWTO FAQ README README.OPTINOUT README.PERF COPYING TODO Changelog
 
 	# keeps SQLgrey data in /var/spool/sqlgrey
 	diropts -m0775 -o sqlgrey -g sqlgrey
@@ -73,7 +74,7 @@ pkg_config () {
 	local SQLgrey_CONF_PWD=""
 	if [ -f "${SQLgrey_CONFIG}" ]; then
 		if (grep -iq "^[\t ]*db_pass[\t ]*=[\t ]*.*$" ${SQLgrey_CONFIG}); then
-			# User has already a db_pass entry
+			# User already has a db_pass entry
 			SQLgrey_CONF_PWD="$(sed -n 's:^[\t ]*db_pass[\t ]*=[\t ]*\(.*\)[\t ]*:\1:gIp' ${SQLgrey_CONFIG})"
 		else
 			SQLgrey_CONF_PWD=""

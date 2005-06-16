@@ -78,6 +78,9 @@ sqlgrey will use the TCP/IP socket to connect, please make sure that
 "tcpip_socket = true"
 is in your 'postgresql.conf' file.
 
+This is my personnal recommendation, really robust, can scale up and
+down when properly configured.
+
 ###########################
 ## Postfix configuration ##
 ###########################
@@ -97,16 +100,21 @@ on the same host.
 ## Whitelisting ##
 ##################
 
-Some MTA don't play well with greylisting (often because they don't
+Some MTAs don't play well with greylisting (often because they don't
 respect the RFCs). To work around this problem (that your users won't
-fail to report to you when it happens):
-- don't run sqlgrey in quiet mode (by default it will log what you need)
+fail to report to you when it will happen):
+- don't disable sqlgrey logs (by default it will log what you need).
 - ask your user for the e-mail of the person that unsuccesfully tried
  to send mail to her/him and when the unsuccessfull attempt occured.
+- in the meantime, if the transmission failure occured recently (less than
+max_connect_age in sqlgrey.conf, by default 24 hours) advise your user to
+contact the sender and politely ask her to re-send the message, there are
+good chances that the second attempt will get through (SQLgrey will probably
+find a match: the first attempt).
 - grep your mail logs for the address, you'll find a line like this
-<timestamp> <system> sqlgrey[nnn]: new: www.xxx.yyy.zzz: <sender_address> -> <your_user>
+<timestamp> <system> sqlgrey: grey: new: <id>(www.xxx.yyy.zzz): <sender_address> -> <your_user>
 by default, one day later you'll find this line:
-<timestamp> <system> sqlgrey[nnn]: Probable spam: www.xxx.yyy.zzz: <sender_address> -> <your_user> at <timestamp>
+<timestamp> <system> sqlgrey: spam: <id>: <sender_address> -> <your_user> at <timestamp>
 
 What matters to you is the IP address (or the class C network) and
 the domain name it is associated with. If Postfix could find a reliable
@@ -140,8 +148,8 @@ your .local files to make your users happy and the reason why
 you did so (see comments on why the existing systems are added).
 
 As of 1.4.3, SQLgrey's whitelists can be updated from a central repository
-with the update_sqlgrey_whitelists script.
-update_sqlgrey_whitelists outputs on STDOUT modified entries.
+with the update_sqlgrey_config script.
+update_sqlgrey_config outputs on STDOUT modified entries.
 Running it from cron is a great way to be warned of new whitelist entries
 or old entries being cleaned up.
 
@@ -160,6 +168,12 @@ in /etc/sqlgrey/sqlgrey.conf
 
 That's all. SQLgrey will make sure it doesn't flood your mailbox by
 rate-limiting the emails it sends.
+
+##################
+# OPTIN / OPTOUT #
+##################
+
+See README.OPTINOUT
 
 #################
 # RPM Packaging #
@@ -182,34 +196,6 @@ The sourceforge site (http://sqlgrey.sourceforge.net/) points to the
 latest ebuild available. See http://linuxreviews.org/gentoo/ebuilds/
 for how to use it.
 
-If you have followed the Gentoo Virtual Mailhosting guide and want to control
-in MySQL which domain has greylisting, then do the following:
+If you use the ebuild and haven't done so yet, please fill a comment on
+http://bugs.gentoo.org/show_bug.cgi?id=71535
 
-* In MySQL change the transport table:
-
-mysql> use mailsql;
-mysql> ALTER TABLE transport ADD greylisting tinyint(1) NOT NULL default '0';
-
-* Create a map for Postfix:
-create a /etc/postfix/mysql-sqlgrey-enabled-domains.cf file
-## BEGIN ##
-user			= mailsql
-password		= $password
-dbname			= mailsql
-table			= transport
-select_field		= 'greylist_policy'
-where_field		= domain
-additional_conditions	= AND greylisting='1'
-hosts			= unix:/var/run/mysqld/mysqld.sock
-## END ##
-
-* In Postfix main.cf add/change:
-proxy_read_maps		= proxy:mysql:/etc/postfix/greylist_enabled_domain.mysql
-smtpd_restriction_classes = greylist_policy
-greylist_policy		= check_policy_service inet:127.0.0.1:2501
-smtpd_recipient_restrictions = ....
-	...
-	reject_unauth_destination
-	...
-	check_recipient_access proxy:mysql:/etc/postfix/greylist_enabled_domain.mysql
-	...

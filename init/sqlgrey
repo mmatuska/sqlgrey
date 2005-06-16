@@ -33,6 +33,7 @@ case "$1" in
 
   restart)
 	$0 stop
+	sleep 1 # hack: missing REUSEADDR from Net::Server?
 	$0 start
 	;;
 

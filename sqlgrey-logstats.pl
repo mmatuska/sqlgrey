@@ -28,7 +28,10 @@ use Getopt::Long qw(:config posix_default no_ignore_case);
 use Time::Local;
 use Date::Calc;
 
-my $VERSION = "1.5.9";
+my $VERSION = "1.6.0";
+
+# supports IPv4 and IPv6
+my $ipregexp = '[\dabcdef\.:]+';
 
 ######################
 # Time-related methods
@@ -98,7 +101,7 @@ sub lasthour {
     $self->{end} = $now;
 }
 
-sub lastday {
+sub last24h {
     my $self = shift;
     my $now = time();
     $self->{begin} = $now - (60 * 60 * 24);
@@ -108,8 +111,8 @@ sub lastday {
 sub lastweek {
     my $self = shift;
     my $now = time();
-    $self->{begin} = $now - (60 * 60 * 24 * 7);
-    $self->{end} = $now;
+    $self->{begin} = $self->today_tstamp();
+    $self->{end} = $self->{begin} - (60 * 60 * 24 * 7);
 }
 
 ##################
@@ -119,36 +122,40 @@ sub parse_args {
     my %opt = ();
 
     GetOptions(\%opt, 'help|h', 'man', 'version', 'yesterday|y', 'today|t',
-	       'lasthour', 'lastday|d', 'lastweek|w', 'programname', 'debug',
+	       'lasthour', 'last24h|d', 'lastweek|w', 'programname', 'debug',
 	       'top-domain=i', 'top-from=i', 'top-spam=i', 'print-delayed')
 	or pod2usage(1);
+
+    if ($opt{debug}) {
+	$self->{debug} = 1;
+    }
 
     if ($opt{help})    { pod2usage(1) }
     if ($opt{man})     { pod2usage(-exitstatus => 0, -verbose => 2) }
     if ($opt{version}) { print "sqlgrey-logstats.pl $VERSION\n"; exit(0) }
 
-    my $count = 0;
+    my $setperiod_count = 0;
     if ($opt{yesterday}) {
 	$self->yesterday();
-	$count++;
+	$setperiod_count++;
     }
     if ($opt{today}) {
 	$self->today();
-	$count++;
+	$setperiod_count++;
     }
     if ($opt{lasthour}) {
 	$self->lasthour();
-	$count++;
+	$setperiod_count++;
     }
-    if ($opt{lastday}) {
-	$self->lastday();
-	$count++;
+    if ($opt{last24h}) {
+	$self->last24h();
+	$setperiod_count++;
     }
     if ($opt{lastweek}) {
 	$self->lastweek();
-	$count++;
+	$setperiod_count++;
     }
-    if ($count > 1) {
+    if ($setperiod_count > 1) {
 	pod2usage(1);
     }
 
@@ -166,15 +173,11 @@ sub parse_args {
 	$self->{print_delayed} = 1;
     }
 
-    # compute year and month for end of data
-    ($self->{month}, $self->{year}) = (localtime($self->{end}))[4,5];
+    # compute current year and month
+    ($self->{month}, $self->{year}) = (localtime)[4,5];
 
     if ($opt{programname}) {
 	$self->{programname} = $opt{programname};
-    }
-
-    if ($opt{debug}) {
-	$self->{debug} = 1;
     }
 }
 
@@ -218,36 +221,61 @@ sub split_date_event {
 
 sub parse_grey {
     my ($self, $time, $event) = @_;
-    if ($event =~ /^domain awl match: updating ([\d\.]+), (.*)$/) {
+    ## old format
+    if ($event =~ /^domain awl match: updating ($ipregexp), (.*)$/i) {
 	$self->{events}++;
 	$self->{passed}++;
 	$self->{domain_awl_match}{$1}{$2}++;
 	$self->{domain_awl_match_count}++;
-    } elsif ($event =~ /^from awl match: updating ([\d\.]+), (.*)$/) {
+    } elsif ($event =~ /^from awl match: updating ($ipregexp), (.*)$/i) {
 	$self->{events}++;
 	$self->{passed}++;
 	$self->{from_awl_match}{$1}{$2}++;
 	$self->{from_awl_match_count}++;
-    } elsif ($event =~ /^new: ([\d\.]+), (.*) -> (.*)$/) {
+    } elsif ($event =~ /^new: ($ipregexp), (.*) -> (.*)$/i) {
 	$self->{events}++;
 	$self->{new}{$1}++;
 	$self->{new_count}++;
-    } elsif ($event =~ /^early reconnect: ([\d\.]+), (.*) -> (.*)$/) {
+    } elsif ($event =~ /^early reconnect: ($ipregexp), (.*) -> (.*)$/i) {
 	$self->{events}++;
 	$self->{early}{$1}++;
 	$self->{early_count}++;
-    } elsif ($event =~ /^reconnect ok: ([\d\.]+), (.*) -> (.*) \((.*)\)/) {
+    } elsif ($event =~ /^reconnect ok: ($ipregexp), (.*) -> (.*) \((.*)\)/i) {
 	$self->{events}++;
 	$self->{passed}++;
 	$self->{reconnect}{$1}{$2}++;
 	$self->{reconnect_count}++;
-    } elsif ($event =~ /^domain awl: ([\d\.]+), (.*) added$/) {
+    ## new format
+    } elsif ($event =~ /^domain awl match: updating ($ipregexp)\($ipregexp\), (.*)$/i) {
+	$self->{events}++;
+	$self->{passed}++;
+	$self->{domain_awl_match}{$1}{$2}++;
+	$self->{domain_awl_match_count}++;
+    } elsif ($event =~ /^from awl match: updating ($ipregexp)\($ipregexp\), (.*)$/i) {
+	$self->{events}++;
+	$self->{passed}++;
+	$self->{from_awl_match}{$1}{$2}++;
+	$self->{from_awl_match_count}++;
+    } elsif ($event =~ /^new: ($ipregexp)\($ipregexp\), (.*) -> (.*)$/i) {
+	$self->{events}++;
+	$self->{new}{$1}++;
+	$self->{new_count}++;
+    } elsif ($event =~ /^early reconnect: ($ipregexp)\($ipregexp\), (.*) -> (.*)$/i) {
+	$self->{events}++;
+	$self->{early}{$1}++;
+	$self->{early_count}++;
+    } elsif ($event =~ /^reconnect ok: ($ipregexp)\($ipregexp\), (.*) -> (.*) \((.*)\)/i) {
+	$self->{events}++;
+	$self->{passed}++;
+	$self->{reconnect}{$1}{$2}++;
+	$self->{reconnect_count}++;
+    } elsif ($event =~ /^domain awl: $ipregexp, .* added$/i) {
 	## what?
-    } elsif ($event =~ /^from awl: ([\d\.]+), (.*) added$/) {
+    } elsif ($event =~ /^from awl: $ipregexp, .* added$/i) {
 	## what?
-    } elsif ($event =~ /^from awl: [\d\.]+, .* added/) {
+    } elsif ($event =~ /^from awl: $ipregexp, .* added/i) {
 	## what?
-    } elsif ($event =~ /^domain awl: [\d\.]+, .* added/) {
+    } elsif ($event =~ /^domain awl: $ipregexp, .* added/i) {
 	## what?
     } else {
 	$self->debug("unknown grey event at $time: $event\n");
@@ -256,12 +284,10 @@ sub parse_grey {
 
 sub parse_whitelist {
     my ($self, $time, $event) = @_;
-    if ($event =~ /^(.*), ([\d\.]+)\((.*)\) -> (.*)$/) {
+    if ($event =~ /^.*, $ipregexp\(.*\) -> .*$/i) {
 	$self->{events}++;
 	$self->{passed}++;
 	$self->{whitelisted}++;
-	$self->{whitelisted_ip}{$2}++;
-	$self->{whitelisted_fqdn}{$3}++;
     } else {
 	$self->debug("unknown whitelist event at $time: $event\n");
     }
@@ -277,9 +303,11 @@ sub parse_spam {
     }
 }
 
+# TODO
 sub parse_perf {
 }
 
+# distribute processing to appropriate parser
 sub parse_line {
     my ($self, $line) = @_;
 
@@ -299,167 +327,89 @@ sub parse_line {
     } # don't care for other types
 }
 
-sub print_awl {
+# format a title
+sub print_title {
     my $self = shift;
-    $self->print_domain_awl();
-    $self->print_from_awl();
+    my $title = shift;
+    my $ln = length($title);
+    my $line = ' ' . '-' x ($ln + 2) . ' ';
+    print $line . "\n";
+    print "| $title |\n";
+    print $line . "\n\n";
 }
 
-sub print_domain_awl {
+# breaks down and print an hash
+sub print_distribution {
     my $self = shift;
+    my $hash_to_print = shift;
+    my $max_to_print = shift;
+    my $title = shift;
+
     my @top;
     my $idx;
-    foreach my $ip (keys(%{$self->{domain_awl_match}})) {
+    my $count = 0;
+    foreach my $id (keys(%{$hash_to_print})) {
+	$count++;
 	my $hash;
 	$hash->{count} = 0;
-	$hash->{ip} = $ip;
-	foreach my $domain (keys(%{$self->{domain_awl_match}{$ip}})) {
-	    $hash->{count} += $self->{domain_awl_match}{$ip}{$domain};
+	$hash->{id} = $id;
+	foreach my $subval (keys(%{$hash_to_print->{$id}})) {
+	    $hash->{count} += $hash_to_print->{$id}{$subval};
 	}
 	$top[$#top+1] = $hash;
 	@top = reverse sort { $a->{count} <=> $b->{count} } @top;
-	pop @top if (($self->{top_domain} != -1) && ($#top >= $self->{top_domain}));
+	pop @top if (($max_to_print != -1) && ($#top >= $max_to_print));
     }
-    if ($self->{top_domain} != -1) {
-	print "--------------------------------\n". 
-	    "  Domain AWL top " . ($#top + 1) . " sources\n" .
-	    "--------------------------------\n\n";
+    if ($max_to_print != -1) {
+	$self->print_title("$title (top " . ($#top + 1) . ", " . ($#top + 1 - $count) . " hidden)");
     } else {
-	print "---------------------\n" .
-	    "  Domain AWL full\n" .
-	    "---------------------\n\n";
+	$self->print_title($title);
     }
     for ($idx = 0; $idx <= $#top; $idx++) {
 	my @dtop;
-	foreach my $domain (keys(%{$self->{domain_awl_match}{$top[$idx]->{ip}}})) {
+	foreach my $subval (keys(%{$hash_to_print->{$top[$idx]->{id}}})) {
 	    my $hash;
-	    $hash->{count} = $self->{domain_awl_match}{$top[$idx]->{ip}}{$domain};
-	    $hash->{domain} = $domain;
+	    $hash->{count} = $hash_to_print->{$top[$idx]->{id}}{$subval};
+	    $hash->{domain} = $subval;
 	    $dtop[$#dtop+1] = $hash;
 	    @dtop = sort { $a->{count} <=> $b->{count} } @dtop;
 	}
 	@dtop = reverse @dtop;
-	print "$top[$idx]->{ip}: $top[$idx]->{count}\n";
+	print "$top[$idx]->{id}: $top[$idx]->{count}\n";
 	for (my $didx = 0; $didx <= $#dtop; $didx++) {
 	    print "            $dtop[$didx]->{domain}: $dtop[$didx]->{count}\n";
 	}
     }
     print "\n";
 }
+sub print_domain_awl {
+    my $self = shift;
+    $self->print_distribution($self->{domain_awl_match}, $self->{top_domain},
+			      "Domain AWL");
+}
 
 sub print_from_awl {
     my $self = shift;
-    my @top;
-    my $idx;
-    foreach my $ip (keys(%{$self->{from_awl_match}})) {
-	my $hash;
-	$hash->{count} = 0;
-	$hash->{ip} = $ip;
-	foreach my $from (keys(%{$self->{from_awl_match}{$ip}})) {
-	    $hash->{count} += $self->{from_awl_match}{$ip}{$from};
-	}
-	$top[$#top+1] = $hash;
-	@top = reverse sort { $a->{count} <=> $b->{count} } @top;
-	pop @top if (($self->{top_from} != -1) && ($#top >= $self->{top_from}));
-    }
-    if ($self->{top_from} != -1) {
-	print "----------------------------\n". 
-	    "  From AWL top " . ($#top + 1) . " sources\n" .
-	    "----------------------------\n\n";
-    } else {
-	print "-----------------\n" .
-	    "  From AWL full\n" .
-	    "-----------------\n\n";
-    }
-    for ($idx = 0; $idx <= $#top; $idx++) {
-	my @ftop;
-	foreach my $from (keys(%{$self->{from_awl_match}{$top[$idx]->{ip}}})) {
-	    my $hash;
-	    $hash->{count} = $self->{from_awl_match}{$top[$idx]->{ip}}{$from};
-	    $hash->{from} = $from;
-	    $ftop[$#ftop+1] = $hash;
-	    @ftop = sort { $a->{count} <=> $b->{count} } @ftop;
-	}
-	@ftop = reverse @ftop;
-	print "$top[$idx]->{ip}: $top[$idx]->{count}\n";
-	for (my $didx = 0; $didx <= $#ftop; $didx++) {
-	    print "            $ftop[$didx]->{from}: $ftop[$didx]->{count}\n";
-	}
-    }
-    print "\n";
+
+    $self->print_distribution($self->{from_awl_match}, $self->{top_from},
+			      "From AWL");
 }
 
 sub print_spam {
     my $self = shift;
-    my @top;
-    my $idx;
-    foreach my $ip (keys(%{$self->{rejected}})) {
-	my $hash;
-	$hash->{count} = 0;
-	$hash->{ip} = $ip;
-	foreach my $from (keys(%{$self->{rejected}{$ip}})) {
-	    $hash->{count} += $self->{rejected}{$ip}{$from};
-	}
-	$top[$#top+1] = $hash;
-	@top = reverse sort { $a->{count} <=> $b->{count} } @top;
-	pop @top if (($self->{top_spam} != -1) && ($#top >= $self->{top_spam}));
-    }
-    if ($self->{top_from} != -1) {
-	print "--------------------\n". 
-	    "   top " . ($#top + 1) . " sources\n" .
-	    "--------------------\n\n";
-    }
-    for ($idx = 0; $idx <= $#top; $idx++) {
-	my @stop;
-	foreach my $from (keys(%{$self->{rejected}{$top[$idx]->{ip}}})) {
-	    my $hash;
-	    $hash->{count} = $self->{rejected}{$top[$idx]->{ip}}{$from};
-	    $hash->{from} = $from;
-	    $stop[$#stop+1] = $hash;
-	    @stop = sort { $a->{count} <=> $b->{count} } @stop;
-	}
-	@stop = reverse @stop;
-	print "$top[$idx]->{ip}: $top[$idx]->{count}\n";
-	for (my $didx = 0; $didx <= $#stop; $didx++) {
-	    print "            $stop[$didx]->{from}: $stop[$didx]->{count}\n";
-	}
-    }
-    print "\n";
+
+    $self->print_distribution($self->{rejected}, $self->{top_spam},
+			      "Spam");
 }
 
 sub print_delayed {
     my $self = shift;
+
     if (! defined $self->{print_delayed}) {
 	return;
     }
-    my @top;
-    my $idx;
-    foreach my $ip (keys(%{$self->{reconnect}})) {
-	my $hash;
-	$hash->{count} = 0;
-	$hash->{ip} = $ip;
-	foreach my $from (keys(%{$self->{reconnect}{$ip}})) {
-	    $hash->{count} += $self->{reconnect}{$ip}{$from};
-	}
-	$top[$#top+1] = $hash;
-	@top = reverse sort { $a->{count} <=> $b->{count} } @top;
-    }
-    for ($idx = 0; $idx <= $#top; $idx++) {
-	my @stop;
-	foreach my $from (keys(%{$self->{reconnect}{$top[$idx]->{ip}}})) {
-	    my $hash;
-	    $hash->{count} = $self->{reconnect}{$top[$idx]->{ip}}{$from};
-	    $hash->{from} = $from;
-	    $stop[$#stop+1] = $hash;
-	    @stop = sort { $a->{count} <=> $b->{count} } @stop;
-	}
-	@stop = reverse @stop;
-	print "$top[$idx]->{ip}: $top[$idx]->{count}\n";
-	for (my $didx = 0; $didx <= $#stop; $didx++) {
-	    print "            $stop[$didx]->{from}: $stop[$didx]->{count}\n";
-	}
-    }
-    print "\n";
+    $self->print_distribution($self->{reconnect}, -1,
+			      "Delayed");
 }
 
 sub print_stats {
@@ -467,13 +417,18 @@ sub print_stats {
     print "##################\n" .
 	"## Global stats ##\n" .
 	"##################\n\n";
-    print "Events      : " . $self->{events} . "\n";
-    print "Passed      : " . $self->{passed} . "\n";
-    print "Rejected    : " . $self->{rejected_count} . "\n";
-    print "Early       : " . $self->{early_count} . "\n";
-    print "\n###############################\n" .
+    print "Events        : " . $self->{events} . "\n";
+    print "Passed        : " . $self->{passed} . "\n";
+    print "Early         : " . $self->{early_count} . "\n";
+    print "Delayed       : " . $self->{new_count} . "\n\n";
+
+    print "Probable SPAM : " . $self->{rejected_count} . "\n\n";
+
+    print "###############################\n" .
 	"## Whitelist/AWL performance ##\n" .
 	"###############################\n\n";
+    print "Breakdown for $self->{passed} accepted messages:\n\n";
+
     print "Whitelists  : " .
         percent($self->{whitelisted}, $self->{passed}) .
 	"\t($self->{whitelisted})\n";
@@ -485,22 +440,11 @@ sub print_stats {
 	"\t($self->{from_awl_match_count})\n";
     print "Delayed     : " .
 	percent($self->{reconnect_count},$self->{passed}) .
-	"\t($self->{reconnect_count})\n";
-#     print "\n#######################\n" .
-# 	"## Whitelist details ##\n" .
-# 	"#######################\n\n";
-#     $self->print_whitelist();
-    print "\n#################\n" .
-	"## AWL details ##\n" .
-	"#################\n\n";
-    $self->print_awl();
-    print "\n##################\n" .
-	"## SPAM details ##\n" .
-	"##################\n\n";
+	"\t($self->{reconnect_count})\n\n";
+
+    $self->print_domain_awl();
+    $self->print_from_awl();
     $self->print_spam();
-    print "#####################\n" .
-	"## Delayed details ##\n" .
-	"#####################\n\n";
     $self->print_delayed();
 }
 
@@ -518,6 +462,10 @@ my $parser = bless {
     early_count => 0,
     domain_awl_match_count => 0,
     from_awl_match_count => 0,
+    domain_awl_match => {},
+    from_awl_match => {},
+    rejected => {},
+    reconnect => {},
     reconnect_count => 0,
     top_domain => -1,
     top_from => -1,

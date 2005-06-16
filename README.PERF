@@ -1,0 +1,37 @@
+On large sites, database performance can suffer. Here are some tips.
+
+# One SQLgrey on DB vs one SQLgrey on each MTA
+
+Usually, for robustness reasons you should run one SQLgrey on each
+MTA and configure Postfix to ask the local SQLgrey instance.
+The problem is that when you use a separate database, SQLgrey queries
+have to be done accross the network and there usually are several sequential
+queries for only one message.
+You can minimise latency issues by having only one SQLgrey instance
+sitting on the database host. The huge flaw in this architecture is that
+if the database host breaks your whole email infrastructure breaks too
+(SQLgrey is designed to work around database unavailabilities).
+The fact that queries are serialised at the SQLgrey level might also help
+performance by avoiding too much parallel queries.
+
+# Optin/optout related performance
+
+See README.OPTINOUT, ## Performance guidelines
+
+# Put most common hosts in whitelists
+
+If your logs show that much of your traffic is coming from a handfull
+of servers, put them in the whitelists: SQLgrey won't have to query the
+database.
+
+You can use sqlgrey-logstats.pl to point out the most common sources in
+your AWLs.
+
+All whitelists types don't share the same speed. The quickest are the IP
+based whitelists and the full fqdn entries in the fqdn whitelists.
+regexps and domain (*.domain.name) in fqdn whitelists are noticeably slower.
+
+# Add RAM to the database host
+
+If you want to put money somewhere, unless you have an uncommon setup, RAM
+on the DB should be the best place to invest.
