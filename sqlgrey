@@ -34,7 +34,7 @@ use POSIX ':sys_wait_h';
 use vars qw(@ISA);
 @ISA = qw(Net::Server::Multiplex);
 
-my $VERSION = "1.6.0";
+my $VERSION = "1.7.0";
 my $software = 'SQLgrey-' . $VERSION;
 
 my $DB_VERSION = 3;
@@ -63,6 +63,7 @@ $dflt{awl_age}            = 60;           # 60 days
 $dflt{group_domain_level} = 2;            # 2 e-mail addr from same domain/IP
 $dflt{reject_first_attempt} = 'delay';    # Use 'delay' or 'immed'
 $dflt{reject_early_reconnect} = undef;    # Leave undef
+$dflt{connect_src_throttle} = 0;          # 0 = Don't throttle
 $dflt{db_type}            = 'Pg';
 $dflt{db_name}            = 'sqlgrey';
 $dflt{db_host}            = 'localhost';
@@ -427,7 +428,7 @@ sub getconfig {
     }
     my $result = $sth->fetchall_arrayref();
     if ($#$result != 0) {
-        $self->mylog('dbaccess', 0, 'error: unexpected SQL result');
+        $self->mylog('dbaccess', 0, 'error: unexpected SQL result (getconfig)');
 	$self->mydie('getconfig error',
 		     'Can\'t continue: unexpected config table read error');
     } else {
@@ -1160,7 +1161,76 @@ sub count_from_awl {
 
     my $result = $sth->fetchall_arrayref();
     if ($#$result != 0) {
-        $self->mylog('dbaccess', 0, 'error: unexpected SQL result');
+        $self->mylog('dbaccess', 0, 'error: unexpected SQL result (count_from_awl)');
+	return 0; # do as if table is empty
+    } else {
+        return $result->[0][0];
+    }
+}
+
+# Check number of entries from a given IP in domain_awl
+sub count_src_domain_awl {
+    my ($self, $host) = @_;
+
+    my $sth = $self->prepare_cached("SELECT COUNT(*) FROM $domain_awl " .
+				    'WHERE src = ?');
+    if (!defined $sth or !$sth->execute($host)) {
+	$self->db_unavailable();
+	$self->mylog('dbaccess', 0, "error: couldn't access $domain_awl table: $DBI::errstr");
+        return 0; # do as if table is empty
+    } else {
+	$self->db_available();
+    }
+
+    my $result = $sth->fetchall_arrayref();
+    if ($#$result != 0) {
+        $self->mylog('dbaccess', 0, 'error: unexpected SQL result (count_src_domain_awl)');
+	return 0; # do as if table is empty
+    } else {
+        return $result->[0][0];
+    }
+}
+
+# Check number of entries from a given IP in from_awl
+sub count_src_from_awl {
+    my ($self, $host) = @_;
+
+    my $sth = $self->prepare_cached("SELECT COUNT(*) FROM $from_awl " .
+				    'WHERE src = ?');
+    if (!defined $sth or !$sth->execute($host)) {
+	$self->db_unavailable();
+	$self->mylog('dbaccess', 0, "error: couldn't access $from_awl table: $DBI::errstr");
+        return 0; # do as if table is empty
+    } else {
+	$self->db_available();
+    }
+
+    my $result = $sth->fetchall_arrayref();
+    if ($#$result != 0) {
+        $self->mylog('dbaccess', 0, 'error: unexpected SQL result (count_src_from_awl)');
+	return 0; # do as if table is empty
+    } else {
+        return $result->[0][0];
+    }
+}
+
+# Check number of entries from a given IP in connect
+sub count_src_connect {
+    my ($self, $host) = @_;
+
+    my $sth = $self->prepare_cached("SELECT COUNT(*) FROM $connect " .
+				    'WHERE src = ?');
+    if (!defined $sth or !$sth->execute($host)) {
+	$self->db_unavailable();
+	$self->mylog('dbaccess', 0, "error: couldn't access $connect table: $DBI::errstr");
+        return 0; # do as if table is empty
+    } else {
+	$self->db_available();
+    }
+
+    my $result = $sth->fetchall_arrayref();
+    if ($#$result != 0) {
+        $self->mylog('dbaccess', 0, 'error: unexpected SQL result (count_src_connect)');
 	return 0; # do as if table is empty
     } else {
         return $result->[0][0];
@@ -1200,6 +1270,13 @@ sub delete_domain_from_mail_awl {
 	      ' AND src = ' . $self->quote($host));
 }
 
+sub delete_domain_from_connect {
+    my ($self, $domain, $host) = @_;
+    $self->do("DELETE FROM $connect " .
+	      'WHERE sender_domain = ' . $self->quote($domain) .
+	      ' AND src = ' . $self->quote($host));
+}
+
 # Active domain AWL for a domain/IP
 sub move_domain_from_mail_to_domain_awl {
     my ($self, $domain, $host) = @_;
@@ -1224,7 +1301,7 @@ sub get_first_seen_in_from_awl {
 
     my $result = $sth->fetchall_arrayref();
     if ($#$result != 0) {
-        $self->mylog('grey', 0, "error: unexpected SQL result in get_first_seen_in_from_awl");
+        $self->mylog('grey', 0, 'error: unexpected SQL result (get_first_seen_in_from_awl)');
 	return 0; # do as if table is empty
     } else {
         return $result->[0][0];
@@ -1343,10 +1420,13 @@ sub get_reconnect_delay {
 sub delete_mail_ip_from_connect {
     my ($self, $sender_name, $sender_domain, $addr) = @_;
 
+    $sender_name = deverp_user($sender_name);
+    $sender_name =~ s/#/%/g;
+
     $self->do("DELETE FROM $connect " .
-	      'WHERE sender_name = ' . $self->quote($sender_name) .
+	      'WHERE src = ' . $self->quote($addr) .
 	      ' AND sender_domain = ' . $self->quote($sender_domain) .
-	      ' AND src = ' . $self->quote($addr));
+	      ' AND sender_name LIKE ' . $self->quote($sender_name) );
 }
 
 # clean probable SPAM attempts and log them
@@ -1996,18 +2076,30 @@ sub smtpd_access_policy($$)
 	    $self->move_domain_from_mail_to_domain_awl($sender_domain,
 						       $cltid);
 	    $self->mylog('grey', 2, "domain awl: $cltid, $sender_domain added");
+	    $self->delete_domain_from_connect($sender_domain, $cltid);
 	} else {
 	    # add to mail-level AWL
 	    $self->mylog('grey', 2, "from awl: $cltid, $deverp_sender_name" .
 			 '@' . "$sender_domain added");
 	    $self->put_in_from_awl($deverp_sender_name, $sender_domain,
 				   $cltid, $first_seen);
+	    $self->delete_mail_ip_from_connect($sender_name, $sender_domain,
+				   $cltid);
 	}
-	$self->delete_mail_ip_from_connect($sender_name, $sender_domain,
-					   $cltid);
 	return $self->{sqlgrey}{prepend} ?
 	    $prepend . "delayed $delay by $software" : 'dunno';
     }
+    # Throttling too many connections from same new host
+    if (defined $self->{sqlgrey}{connect_src_throttle} and $self->{sqlgrey}{connect_src_throttle} > 0) {
+        if ($self->count_src_connect($cltid) >= $self->{sqlgrey}{connect_src_throttle}
+	    and $self->count_src_domain_awl($cltid) < 1
+	    and $self->count_src_from_awl($cltid) < $self->{sqlgrey}{connect_src_throttle}) {
+	        $self->mylog('grey', 2, "throttling: $cltid($addr), $sender_name\@$sender_domain -> $recipient");
+		return ($self->{sqlgrey}{reject_first} . ' Throttling too many connections from new source - ' .
+		' Try again later.');
+	}
+    }
+
     # new connection
     $self->mylog('grey', 2, "new: $cltid($addr), $sender_name\@$sender_domain -> $recipient");
     $self->put_in_connect($sender_name, $sender_domain, $cltid, $recipient);
@@ -2181,6 +2273,7 @@ sub main()
 	    reject_first    => $dflt{reject_first_attempt},
 	    reject_early    => $dflt{reject_early_reconnect}
 	    			|| $dflt{reject_first_attempt},
+	    connect_src_throttle => $dflt{connect_src_throttle},
 	    admin_mail      => $dflt{admin_mail},
 	    warn_db         => 0, # mask SQL errors during db init
 	    mail_maxbucket  => 10, # max burst of mails
