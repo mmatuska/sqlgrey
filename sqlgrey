@@ -73,7 +73,7 @@ $dflt{prepend}            = 1;
 $dflt{greymethod}         = 'smart';
 $dflt{optmethod}          = 'none'; # or 'optin' or 'optout'
 $dflt{db_cleandelay}	  = 30 * 60;
-$dflt{admin_mail}         = '';
+$dflt{admin_mail}         = 'postmaster';
 $dflt{log_ident}          = undef;
 $dflt{log} = { # note values here are not used
 	      'grey' => 2,
@@ -131,6 +131,7 @@ sub sendmail {
     my $content = shift;
     my $now = time;
 
+    return if $self->{sqlgrey}{admin_mail} eq '';
     # this code throttles the message rate
     # fill bucket
     $self->{sqlgrey}{mail_bucket} += ($now - $self->{sqlgrey}{last_mail})/
@@ -284,6 +285,9 @@ sub quote {
 sub table_exists {
     my $self = shift;
     my $tablename = shift;
+
+    # if we couldn't connect, do as if the table exist
+    defined $self->{sqlgrey}{dbh} or return 1;
     # Seems the most portable way to do it
     # but needs SQL error reporting off at connect time :-<
     # don't use $self->do here (no need to reconnect on error)
@@ -356,7 +360,8 @@ sub update_dbnow {
     if (!defined $sth or !$sth->execute()) {
 	$self->db_unavailable();
 	$self->mylog('dbaccess', 0, "error: couldn't get now() from DB: $DBI::errstr");
-	return; # we don't update the value
+	return if defined $self->{sqlgrey}{dbnow}; # defined: we don't update the value
+	$self->{sqlgrey}{dbnow} = '0';
     } else {
 	$self->db_available();
 	$result = $sth->fetchall_arrayref();
@@ -401,7 +406,9 @@ sub database_setup {
     }
 
     # if config did exist, we have to check the DB version
-    if ($self->currentdbversion() < $DB_VERSION) {
+    my $current_version = $self->currentdbversion();
+    # don't try an upgrade if we couldn't connect
+    if (defined $current_version and $current_version < $DB_VERSION) {
 	$self->mylog('dbaccess', 1, 'upgrading database from ' .
 		   $self->currentdbversion() . ' to ' .
 		   $DB_VERSION);
@@ -423,14 +430,16 @@ sub getconfig {
 				    'WHERE parameter = ?');
     if (!defined $sth or !$sth->execute($param)) {
 	$self->mylog('dbaccess', 0, "error: couldn't access $config table: $DBI::errstr");
-	$self->mydie('getconfig error',
-		     'Can\'t continue: config table unreadable');
+	return undef;
+	#$self->mydie('getconfig error',
+	#	     'Can\'t continue: config table unreadable');
     }
     my $result = $sth->fetchall_arrayref();
     if ($#$result != 0) {
         $self->mylog('dbaccess', 0, 'error: unexpected SQL result (getconfig)');
-	$self->mydie('getconfig error',
-		     'Can\'t continue: unexpected config table read error');
+	return undef;
+	#$self->mydie('getconfig error',
+	#	     'Can\'t continue: unexpected config table read error');
     } else {
         return $result->[0][0];
     }
@@ -1247,7 +1256,7 @@ sub cleanup_from_awl {
 	                 $self->past_tstamp($self->{sqlgrey}{awl_age}, 'DAY')
 	                );
 
-    $rows = 0 if ($rows eq '0E0');
+    $rows = 0 if (!defined $rows or $rows eq '0E0');
     return $rows ? $rows : 0;
 }
 
@@ -1259,7 +1268,7 @@ sub cleanup_domain_awl {
 	                 $self->past_tstamp($self->{sqlgrey}{awl_age}, 'DAY')
 	                );
 
-    $rows = 0 if ($rows eq '0E0');
+    $rows = 0 if (!defined $rows or $rows eq '0E0');
     return $rows ? $rows : 0;
 }
 
@@ -1461,7 +1470,7 @@ sub cleanup_connect {
 	                );
 
    # DBI returns 0E0 if no rows is affected.
-   $rows = 0 if ($rows eq '0E0');
+   $rows = 0 if (!defined $rows or $rows eq '0E0');
 
    return $rows ? $rows : 0;
 }

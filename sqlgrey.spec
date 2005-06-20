@@ -67,6 +67,7 @@ fi
 %changelog
 * Tue Jun 21 2005 Lionel Bouton <lionel-dev@bouton.name>
  - 1.7.0 release
+ - now continue if the DB isn't available at startup time
  - based on 1.6.0 with Michel Bouissou's work:
   . better connect cleanup when creating AWL entries
   . source IP throttling
