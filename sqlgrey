@@ -1364,7 +1364,7 @@ sub in_connect {
 	$self->db_available();
     }
     my $result = $sth->fetchall_arrayref();
-    if ($#$result != 0) {
+    if ($#$result < 0) {
 	return 0; # not a single entry
     } else {
 	return 1; # at least one entry
@@ -1391,7 +1391,7 @@ sub recently_in_connect {
 	$self->db_available();
     }
     my $result = $sth->fetchall_arrayref();
-    if ($#$result != 0) {
+    if ($#$result < 0) {
 	return 0; # not a single entry
     } else {
 	return 1; # at least one entry
@@ -1436,7 +1436,7 @@ sub get_reconnect_delay {
 	$self->db_available();
     }
     my $result = $sth->fetchall_arrayref();
-    if ($#$result != 0) {
+    if ($#$result < 0) {
         $self->mylog('grey', 0, 'get_reconnect_delay error: no connect in database for ' .
 		      "$sender_name\@$sender_domain, $addr, $rcpt");
 	return 'error: nothing in connect';
