@@ -6,7 +6,7 @@ Summary:   SQLgrey is a postfix grey-listing policy service.
 Name:      %{name}
 Version:   %{ver}
 Release:   %{rel}
-Copyright: GPL
+License:   GPL
 Vendor:    Lionel Bouton <lionel-dev@bouton.name>
 Url:       http://sqlgrey.sourceforge.net
 Packager:  Lionel Bouton <lionel-dev@bouton.name>

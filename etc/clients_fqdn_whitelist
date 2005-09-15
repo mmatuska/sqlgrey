@@ -1,7 +1,7 @@
 ##
 # SQLgrey expects the following expressions:
 #
-# hostname.domain.com # whole system name
+# hostname.domain.com # whole system name (least CPU intensive)
 # *.domain.com        # whitelist any fqdn in the domain 'domain.com'
 # /regexp/            # whitelist any fqdn matching the regexp (by far most CPU intensive)
 
@@ -9,6 +9,10 @@
 # <lots of mtas>.example.com and example.com
 # *.example.com
 # example.com
+
+# Do not add anything here (this file can be overwritten by SQLgrey updates and
+# update_sqlgrey_config), create a "clients_fqdn_whitelist.local" file
+# and add your own entries in there
 
 ###################
 # greylisting.org #
@@ -60,8 +64,6 @@ lockergnome.wc09.net
 # Pool on different subnets
 /^fmr\d+\.intel\.com$/
 
-# Do not add anything here, create a "clients_fqdn_whitelist.local" file
-# and add your own entries in there
 
 #############################
 # Reported by SQLgrey users #
@@ -73,3 +75,20 @@ smtp.mandrake.org # mandrake newsletter
 smtp.mandriva.org # mandriva (previously MandrakeSoft) newsletter
 *.emailebay.com # eBay mailservers
 public.wavexservices.com # Wavex Services Mail Server
+mail.optimumreturn.com # E-commerce ASP solution (W Hotels use them)
+
+###########################
+# Requested by MTA admins #
+###########################
+
+# Ciphired (they need low-latency for their challenge-response system)
+mx.00.zh.cs.ciphire.net
+mx.01.zh.cs.ciphire.net
+mx.00.mc.cs.ciphire.net
+mx.01.mc.cs.ciphire.net
+mx.00.by.cs.ciphire.net
+mx.01.by.cs.ciphire.net
+
+# Do not add anything here (this file can be overwritten by SQLgrey updates and
+# update_sqlgrey_config), create a "clients_fqdn_whitelist.local" file
+# and add your own entries in there

@@ -1,3 +1,7 @@
+# Do not add anything here (this file can be overwritten by SQlgrey updates or
+# update_sqlgrey_config), create a "clients_ip_whitelist.local" file
+# and add your own entries in there
+
 # Reference : http://www.greylisting.org
 12.5.136.141    # Southwest Airlines (unique sender, no retry)
 12.5.136.142    # Southwest Airlines (unique sender, no retry)
@@ -56,5 +60,6 @@
 #216.157.204.5	# Groupwise?
 217.158.50.178  # AXKit mailing list (unique sender per attempt)
 
-# Do not add anything here, create a "clients_ip_whitelist.local" file
+# Do not add anything here (this file can be overwritten by SQlgrey updates or
+# update_sqlgrey_config), create a "clients_ip_whitelist.local" file
 # and add your own entries in there

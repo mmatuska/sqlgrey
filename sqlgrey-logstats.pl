@@ -110,9 +110,8 @@ sub last24h {
 
 sub lastweek {
     my $self = shift;
-    my $now = time();
-    $self->{begin} = $self->today_tstamp();
-    $self->{end} = $self->{begin} - (60 * 60 * 24 * 7);
+    $self->{end} = $self->today_tstamp();
+    $self->{begin} = $self->{begin} - (60 * 60 * 24 * 7);
 }
 
 ##################
@@ -209,7 +208,7 @@ sub split_date_event {
     my ($self, $line) = @_;
 
     if ($line =~
-	m/^(\w{3} [\d ]\d \d\d:\d\d:\d\d) \w+ $self->{programname}: (\w+): (.*)$/o
+	m/^(\w{3} [\d ]\d \d\d:\d\d:\d\d)\s\S+\s$self->{programname}: (\w+): (.*)$/o
 	) {
 	my $time = $self->validate_tstamp($1);
 	if (! defined $time) {
@@ -260,6 +259,12 @@ sub parse_grey {
 	$self->{passed}++;
 	$self->{domain_awl_match}{$1}{$2}++;
 	$self->{domain_awl_match_count}++;
+    ## new format for from_awl match (deverp log)
+    } elsif ($event =~ /^from awl match: updating ($ipregexp)\($ipregexp\), (.*)\(.*\)$/i) {
+	$self->{events}++;
+	$self->{passed}++;
+	$self->{from_awl_match}{$1}{$2}++;
+	$self->{from_awl_match_count}++;
     } elsif ($event =~ /^from awl match: updating ($ipregexp)\($ipregexp\), (.*)$/i) {
 	$self->{events}++;
 	$self->{passed}++;
@@ -269,6 +274,10 @@ sub parse_grey {
 	$self->{events}++;
 	$self->{new}{$1}++;
 	$self->{new_count}++;
+    } elsif ($event =~ /^throttling: ($ipregexp)\($ipregexp\), (.*) -> (.*)$/i) {
+	$self->{events}++;
+	$self->{throttled}{$1}{$2}++;
+	$self->{throttled_count}++;
     } elsif ($event =~ /^early reconnect: ($ipregexp)\($ipregexp\), (.*) -> (.*)$/i) {
 	$self->{events}++;
 	$self->{early}{$1}++;

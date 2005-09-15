@@ -1,12 +1,10 @@
-* 1.6.0
+- experiment with throttling
 
-- fix conf_dir handling
+- make config parser awareof supported options and complain about unsupported ones
 
-- cleanup utility for statistics
+- modularize the whole process
 
-* 1.7.x
-
-- tarpitting
+- make SQLgrey manageable by Postfix's master daemon
 
 - dsn_awl (for MAIL FROM: <>), connect_awl (first stage before from_awl), rcpt_awl (match forwards)
 
@@ -17,7 +15,7 @@
 
 - use time units everywhere to make configuration easier
 
-- experiment with an adaptative cleanup algorithm
+- experiment with an adaptive cleanup algorithm
 
 - create a stress-testing suite (for performance/reliability tests)
 
@@ -26,8 +24,8 @@
 - try to exit with a proper error code when database is unavailable or the user
   doesn't have enough rights to access the pid-file
 
-- add sender e-mail based whitelist with huge warnings
+- add sender e-mail based white-list with huge warnings
 
 - experiment with SPF support
 
-- support migrating from another greylister by calling it to learn its auto-whitelists
+- support migrating from another grey-lister by calling it to learn its auto-white-lists

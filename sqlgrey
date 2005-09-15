@@ -109,18 +109,18 @@ my $ref_to_sqlgrey; # we need this global var to access sqlgrey functions
                     # in signal handlers
 
 sub mylog {
-    my $self = shift;
-    my $logtype = shift;
-    my $loglevel = shift;
+    my ($self, $logtype, $loglevel, $message) = @_;
+
+    $message =~ s/%/%%/g; # protect sprintf used by Syslog
     if (!defined $self->{sqlgrey}{log}{$logtype}) {
-	$self->log($loglevel, "Unknown logtype ($logtype): " . shift);
+	$self->log($loglevel, "Unknown logtype ($logtype): $message");
     }
     if ($loglevel <= $self->{sqlgrey}{log}{$logtype}) {
 	# workaround: we can't disable the TCP connections
 	# logs if we use log_level 4 so log_level is capped by default
 	$loglevel = $loglevel > $self->{server}{log_level} ?
 	    $self->{server}{log_level} : $loglevel;
-	$self->log($loglevel, "$logtype: " . shift);
+	$self->log($loglevel, "$logtype: $message");
     }
 }
 
@@ -184,8 +184,14 @@ sub db_unavailable {
     my $self = shift;
 
     if ($self->{sqlgrey}{db_available}) {
-	$self->{sqlgrey}{warn_db} && $self->sendmail('SQLgrey lost DB',
-			'SQLgrey lost connection to: ' . $self->cnctinfo());
+	if (! defined $self->{sqlgrey}{dbh}) {
+	    $self->{sqlgrey}{warn_db} && $self->sendmail('SQLgrey lost database',
+							 'SQLgrey lost database connection to: ' . $self->cnctinfo());
+	} else {
+	    $self->disconnectdb();
+	    $self->{sqlgrey}{warn_db} && $self->sendmail('SQLgrey database error',
+							 'SQLgrey encountered an SQL error and triggered a reconnection to: ' . $self->cnctinfo());
+	}
 	$self->{sqlgrey}{db_available} = 0;
     }
 }
@@ -470,7 +476,6 @@ sub updateconfig {
     my $self = shift;
     my $param = shift;
     my $value = shift;
-    my $dbh = $self->{sqlgrey}{dbh};
 
     return $self->do("UPDATE $config SET value = " .
 		     $self->quote($value) .
@@ -482,7 +487,6 @@ sub insertconfig() {
     my $self = shift;
     my $param = shift;
     my $value = shift;
-    my $dbh = $self->{sqlgrey}{dbh};
 
     return $self->do("INSERT INTO $config (parameter, value) VALUES(" .
 		     $self->quote($param) . ',' .
@@ -777,7 +781,8 @@ sub connectdb {
 					 $self->{sqlgrey}{db_user},
 					 $self->{sqlgrey}{db_pass},
 					 { PrintError => 0,
-					   AutoCommit => 1 }
+					   AutoCommit => 1,
+					   InactiveDestroy => 1 }
 					)
 	or $self->mylog('dbaccess', 0, "can't connect to DB: $DBI::errstr");
 
@@ -977,30 +982,45 @@ sub get_last_addr_part {
 # generic single-use addresses
 # normaliser
 sub deverp_user {
-    my $user = shift;
+    my ($user, $rcpt) = @_;
 
     ## Try to match single-use addresses
     # SRS (first and subsequent levels of forwarding)
     $user =~ s/^srs0=[^=]+=[^=]+=([^=]+)=([^=]+)$/srs0=#=#=$1=$2/;
     $user =~ s/^srs1=[^=]+=([^=]+)(=+)[^=]+=[^=]+=([^=]+)=([^=]+)$/srs1=#=$1$2#=#=$3=$4/;
+
+    ## BATV
+    # eliminate recipient put in originator
+    $rcpt =~ s/\./\[\.\*-\]+/g;
+    my ($rcpt_lhs, $rcpt_rhs) = split /\@/, $rcpt, 2;
+    # BATV implementations use third or first alternative (first by abuse.net)
+    my $pat = qr/$rcpt_lhs[=\?\*~\.]+?$rcpt_rhs|$rcpt_rhs[=\?\*~\.]+?$rcpt_lhs|$rcpt_lhs/;
+    # replace address with capital RCPT to be save with deletes
+    $user =~ s/(.+[\*=-])$pat(.*)/$1RCPT$2/;
+
     # strip extension, used sometimes for mailing-list VERP
     $user =~ s/\+.*//;
+
     # strip hexadecimal sequences (doable in one regexp ?)
     # don't strip a leading hex sequence though
     my $tmp = '';
     while ($tmp ne $user) {
 	$tmp = $user;
-	$user =~ s/([._-])[0-9a-f]+([._-])/$1#$2/g;
+	$user =~ s/([._-])[0-9a-f]+([._\*-])/$1#$2/g;
     }
-    $user =~ s/([._-])[0-9a-f]+$/$1#/g;
+    $user =~ s/([._\/-])[0-9a-f]+$/$1#/g;
 
     return $user;
 }
 
-# get sender's user/domain
+# returns:
+# 1/ sender's user
+# 2/ sender's domain
+# 3/ sender's deverped address
 sub normalize_sender {
     my $self = shift;
     my $from = lc shift;
+    my $rcpt = lc shift;
     my $empty = '-undef-';
     if ($from eq '') {
         # Probably MAILER-DAEMON talking to us
@@ -1023,7 +1043,7 @@ sub normalize_sender {
     # per RFC, user should be < 64, domain < 255
     # our database schema doesn't support more
     return (substr($user, 0, 64),substr($domain, 0, 255),
-	    substr(deverp_user($user), 0, 64));
+	    substr(deverp_user($user, $rcpt), 0, 64));
 }
 
 # make sure rcpt will be VARCHAR storable
@@ -1494,15 +1514,10 @@ sub fork_cleanup {
 	$self->mylog('system', 0, 'couldn\'t fork child: no cleanup!');
     } elsif ($pid == 0) { # child
 	$self->mylog('system', 3, "forked cleanup child ($$)");
-	# close the listening sockets they are our father responsibility
-#	foreach my $sock ( @{$self->{server}{sock}} ) {
-#	    $sock->close();
-#	}
-	# don't destroy the old dbh (the connection is used by our father)
-	$self->{sqlgrey}{dbh}->{InactiveDestroy} = 1;
 	# we *WANT* a new DB connection or we will delay other processings
 	# or worse send garbage to the DB
 	$self->connectdb();
+	$self->{sqlgrey}{dbh}{InactiveDestroy} = 0;
 	$self->cleanup();
 	# we don't want nasty error messages saying we should have destroyed
 	# an out-of-scope dbh
@@ -1994,7 +2009,7 @@ sub smtpd_access_policy($$)
 
     # prepare lookup
     my ($sender_name,$sender_domain,$deverp_sender_name) =
-	$self->normalize_sender($attr->{sender});
+	$self->normalize_sender($attr->{sender}, $attr->{recipient});
     my $recipient = $self->normalize_rcpt($attr->{recipient});
     my $addr = $attr->{client_address};
     my $fqdn = $attr->{client_name};
@@ -2051,7 +2066,8 @@ sub smtpd_access_policy($$)
     # address scale awl check
     if ($self->is_in_from_awl($deverp_sender_name, $sender_domain, $cltid)) {
 	$self->mylog('grey', 2, "from awl match: updating $cltid($addr), " .
-		      "$sender_name\@$sender_domain");
+		      "$deverp_sender_name\@$sender_domain" .
+		      "($sender_name\@$sender_domain)");
 	# update awl entry
 	$self->update_from_awl($deverp_sender_name, $sender_domain, $cltid);
 	return $self->{sqlgrey}{prepend} ?
