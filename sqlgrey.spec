@@ -1,5 +1,5 @@
 %define name sqlgrey
-%define ver  1.7.0
+%define ver  1.7.1
 %define rel  1
 
 Summary:   SQLgrey is a postfix grey-listing policy service.
@@ -65,6 +65,11 @@ if [ $1 = 0 ]; then
 fi
 
 %changelog
+* Thu Sep 15 2005 Lionel Bouton <lionel-dev@bouton.name>
+ - 1.7.1 release
+ - fix for race condition in multiple instances configurations
+ - fix for weekly stats
+
 * Tue Jun 21 2005 Lionel Bouton <lionel-dev@bouton.name>
  - 1.7.0 release
  - now continue if the DB isn't available at startup time
