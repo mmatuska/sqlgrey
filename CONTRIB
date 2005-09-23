@@ -1,0 +1,30 @@
+Several people helped during SQLgrey development:
+
+Jeff Rice:
+- deVERP tuning (especially for bounce/notify messages) (1.7.2),
+
+Michael Storz:
+- deVERP tuning replace recipients in sender address (1.7.2)
+
+Michel Bouissou:
+- source IP throttling (tarpitting) (1.7.0),
+- better connect cleanup when moving entries in AWL (1.7.0),
+- new 'smart' greylisting algorithm, replacing previous one (1.5.1),
+- portability fixes in update_sqlgrey_config (1.4.5)
+- configurable return code (1.4.5)
+- deVERP and SRS tuning (1.4.5)
+
+Rene Joergensen:
+- better cleanup logging (1.4.2)
+
+Øystein Viggen:
+- fix for startup warning messages (1.4.1)
+- found an SQL injection vulnerability (fixed in 1.4.0)
+
+Derek Battams:
+- ideas for different greylisting algorithms (implemented in 1.3.6)
+
+Klaus Alexander Seistrup:
+- idea for SQLite support (implemented in 1.1.0)
+
+Numerous others helped with great ideas or bug reports.

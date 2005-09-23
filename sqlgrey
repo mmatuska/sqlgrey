@@ -34,7 +34,7 @@ use POSIX ':sys_wait_h';
 use vars qw(@ISA);
 @ISA = qw(Net::Server::Multiplex);
 
-my $VERSION = "1.7.1";
+my $VERSION = "1.7.2";
 my $software = 'SQLgrey-' . $VERSION;
 
 my $DB_VERSION = 3;
@@ -1001,14 +1001,19 @@ sub deverp_user {
     # strip extension, used sometimes for mailing-list VERP
     $user =~ s/\+.*//;
 
+    # strip frequently used bounce/return masks
+    $user =~ s/((bo|bounce|notice-return|notice-reply)[._-])[0-9a-z-_.]+$/$1#/g; # Added by JR
+
     # strip hexadecimal sequences (doable in one regexp ?)
     # don't strip a leading hex sequence though
     my $tmp = '';
     while ($tmp ne $user) {
 	$tmp = $user;
 	$user =~ s/([._-])[0-9a-f]+([._\*-])/$1#$2/g;
+	$user =~ s/([._-])[0-9a-z]{12,}([._-])/$1#$2/g; # Added by JR
     }
     $user =~ s/([._\/-])[0-9a-f]+$/$1#/g;
+    $user =~ s/([._-])[0-9a-z]{12,}$/$1#/g; # Added by JR
 
     return $user;
 }
@@ -1447,15 +1452,14 @@ sub get_reconnect_delay {
 
 # Clean connect entries for a whitelisted mail/IP
 sub delete_mail_ip_from_connect {
-    my ($self, $sender_name, $sender_domain, $addr) = @_;
+    my ($self, $deverp_sender_name, $sender_domain, $addr) = @_;
 
-    $sender_name = deverp_user($sender_name);
-    $sender_name =~ s/#/%/g;
+    $deverp_sender_name =~ s/#/%/g;
 
     $self->do("DELETE FROM $connect " .
 	      'WHERE src = ' . $self->quote($addr) .
 	      ' AND sender_domain = ' . $self->quote($sender_domain) .
-	      ' AND sender_name LIKE ' . $self->quote($sender_name) );
+	      ' AND sender_name LIKE ' . $self->quote($deverp_sender_name) );
 }
 
 # clean probable SPAM attempts and log them
@@ -2108,7 +2112,7 @@ sub smtpd_access_policy($$)
 			 '@' . "$sender_domain added");
 	    $self->put_in_from_awl($deverp_sender_name, $sender_domain,
 				   $cltid, $first_seen);
-	    $self->delete_mail_ip_from_connect($sender_name, $sender_domain,
+	    $self->delete_mail_ip_from_connect($deverp_sender_name, $sender_domain,
 				   $cltid);
 	}
 	return $self->{sqlgrey}{prepend} ?
