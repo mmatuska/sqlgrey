@@ -65,6 +65,11 @@ if [ $1 = 0 ]; then
 fi
 
 %changelog
+* Tue Oct 25 2005 Lionel Bouton <lionel-dev@bouton.name>
+ - 1.7.2 release
+ - fixes for several errors in logging
+ - clean_method ported from 1.6.x
+
 * Thu Sep 15 2005 Lionel Bouton <lionel-dev@bouton.name>
  - 1.7.1 release
  - fix for race condition in multiple instances configurations
