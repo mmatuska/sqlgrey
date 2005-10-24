@@ -67,6 +67,10 @@
 # Reminder: the following entry is supposed to solve the problem by 2006
 # discovery.acnatsci.org (use groupwise 5.5, 450 is a 554 for them)
 192.204.19.13
+# Free.fr uses a separate pool for retries
+# the "first try" servers are smtp?-g19.free.fr, all servers are in the same
+# class C network which is used for free/proxad servers
+212.27.42
 
 # Do not add anything here (this file can be overwritten by SQlgrey updates or
 # update_sqlgrey_config), create a "clients_ip_whitelist.local" file

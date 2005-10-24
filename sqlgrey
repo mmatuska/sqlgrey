@@ -108,7 +108,7 @@ my $reload = 0; # non-zero signals a regexps/whitelists reload request
 my $ref_to_sqlgrey; # we need this global var to access sqlgrey functions
                     # in signal handlers
 
-sub mylog {
+sub mylog($$$$) {
     my ($self, $logtype, $loglevel, $message) = @_;
 
     $message =~ s/%/%%/g; # protect sprintf used by Syslog
@@ -125,7 +125,7 @@ sub mylog {
 }
 
 # Send mails
-sub sendmail {
+sub sendmail($$$) {
     my $self = shift;
     my $subject = shift;
     my $content = shift;
@@ -168,7 +168,7 @@ sub sendmail {
     }
 }
 
-sub mydie {
+sub mydie($$) {
     my $self = shift;
     my $error = shift;
     $self->sendmail('SQLgrey died', $error);
@@ -180,7 +180,7 @@ sub mydie {
 ##########################
 
 # Trigger e-mails when the DB connection's state changes
-sub db_unavailable {
+sub db_unavailable($) {
     my $self = shift;
 
     if ($self->{sqlgrey}{db_available}) {
@@ -196,7 +196,7 @@ sub db_unavailable {
     }
 }
 
-sub db_available {
+sub db_available($) {
     my $self = shift;
 
     if (! $self->{sqlgrey}{db_available}) {
@@ -208,7 +208,7 @@ sub db_available {
 
 # fault (lost connection) tolerant do
 # allows a RDBMs restart without crash
-sub do {
+sub do($$) {
     my $self = shift;
     my $query = shift;
     my $result;
@@ -231,7 +231,7 @@ sub do {
 }
 
 # prepare_cached needs to check for a dbh
-sub prepare_cached {
+sub prepare_cached($$) {
     my $self = shift;
     my $query = shift;
 
@@ -253,7 +253,7 @@ sub prepare_cached {
 }
 
 # prepar needs to check for a dbh
-sub prepare {
+sub prepare($$) {
     my $self = shift;
     my $query = shift;
 
@@ -277,7 +277,7 @@ sub prepare {
 # quote can't be called directly when dbh is undef
 # we provide a wrapper
 # we don't try to reconnect here
-sub quote {
+sub quote($$) {
     my $self = shift;
     my $toquote = shift;
     if (! defined $self->{sqlgrey}{dbh}) {
@@ -288,7 +288,7 @@ sub quote {
 }
 
 # Check if a table exists
-sub table_exists {
+sub table_exists($$) {
     my $self = shift;
     my $tablename = shift;
 
@@ -303,22 +303,22 @@ sub table_exists {
 }
 
 # Drop a table
-sub drop_table {
+sub drop_table($$) {
     my $self = shift;
     my $table = shift;
     $self->do("DROP TABLE $table");
 }
 
 # Database type queries
-sub SQLite {
+sub SQLite($) {
     my $self = shift;
     return ($self->{sqlgrey}{db_type} eq 'SQLite');
 }
-sub PostgreSQL {
+sub PostgreSQL($) {
     my $self = shift;
     return ($self->{sqlgrey}{db_type} eq 'Pg');
 }
-sub MySQL {
+sub MySQL($) {
     my $self = shift;
     return ($self->{sqlgrey}{db_type} eq 'mysql');
 }
@@ -328,7 +328,7 @@ sub MySQL {
 # we use $self->{sqlgrey}{dbnow} to make sure the SQL function
 # now() can't make the optimizer think the value can change
 # and make the DB evaluate it for *each* row of the table we'll select from
-sub past_tstamp {
+sub past_tstamp($$$) {
     my ($self, $nb, $unit) = @_;
     if ($self->MySQL()) {
 	# MySQL doesn't want any ' char
@@ -355,7 +355,7 @@ sub past_tstamp {
     }
 }
 
-sub update_dbnow {
+sub update_dbnow($) {
     my $self = shift;
 
     # no dbnow needed for SQLite
@@ -376,7 +376,7 @@ sub update_dbnow {
 }
 
 # Create tables if not done already
-sub database_setup {
+sub database_setup($) {
     my $self = shift;
     # AWL and connect tables checks
     if (! $self->table_exists($from_awl)) {
@@ -428,7 +428,7 @@ sub database_setup {
 # Database configuration related, only used for checking
 # schema version now, might be used to check compatibility
 # between database schema and SQLgrey startup switches in the future
-sub getconfig {
+sub getconfig($$) {
     my $self = shift;
     my $param = shift;
 
@@ -451,7 +451,7 @@ sub getconfig {
     }
 }
 
-sub setconfig {
+sub setconfig($$$) {
     my $self = shift;
     my $param = shift;
     my $value = shift;
@@ -472,7 +472,7 @@ sub setconfig {
     }
 }
 
-sub updateconfig {
+sub updateconfig($$$) {
     my $self = shift;
     my $param = shift;
     my $value = shift;
@@ -483,7 +483,7 @@ sub updateconfig {
 		     $self->quote($param));
 }
 
-sub insertconfig() {
+sub insertconfig($$$) {
     my $self = shift;
     my $param = shift;
     my $value = shift;
@@ -493,7 +493,7 @@ sub insertconfig() {
 		     $self->quote($value) . ')');
 }
 
-sub currentdbversion() {
+sub currentdbversion($) {
     my $self = shift;
 
     # No config table -> version 0
@@ -505,7 +505,7 @@ sub currentdbversion() {
     return $self->getconfig('version');
 }
 
-sub upgradedb() {
+sub upgradedb($) {
     my $self = shift;
     my $currentdbver = $self->currentdbversion();
     while ($currentdbver < $DB_VERSION) {
@@ -514,7 +514,7 @@ sub upgradedb() {
     }
 }
 
-sub upgrade() {
+sub upgrade($$) {
     my $self = shift;
     my $ver = shift;
     if ($ver == 0) {
@@ -528,7 +528,7 @@ sub upgrade() {
     }
 }
 
-sub upgrade1() {
+sub upgrade1($) {
     my $self = shift;
     $self->mylog('dbaccess', 1, 'upgrading database schema from version 1 to version 2');
 
@@ -637,7 +637,7 @@ sub upgrade1() {
     $self->setconfig('version','2');
 }
 
-sub upgrade2() {
+sub upgrade2($) {
     my $self = shift;
     $self->mylog('dbaccess', 1, 'upgrading database schema from version 2 to version 3');
 
@@ -747,7 +747,7 @@ sub upgrade2() {
 }
 
 # Build a connect string for DBI
-sub cnctinfo {
+sub cnctinfo($) {
 # Tested with PostgreSQL, MySQL and SQLite
     my $self = shift;
     my $dsn = 'DBI:' . $self->{sqlgrey}{db_type};
@@ -766,14 +766,14 @@ sub cnctinfo {
 }
 
 # Global DB Init code
-sub initdb {
+sub initdb($) {
     my $self = shift;
     $self->connectdb();
     $self->update_dbnow();
     $self->database_setup();
 }
 
-sub connectdb {
+sub connectdb($) {
     my $self = shift;
     # we can't use connect_cached as we create another connection
     # in the child responsible for cleanups
@@ -801,7 +801,7 @@ sub connectdb {
     }
 }
 
-sub disconnectdb {
+sub disconnectdb($) {
     my $self = shift;
     if (defined $self->{sqlgrey}{dbh}) {
 	$self->{sqlgrey}{dbh}->disconnect();
@@ -828,7 +828,7 @@ sub create_from_awl_table {
 	or $self->mydie('create_from_awl_table error',
 			'Couldn\'t create table $tablename: $DBI::errstr');
 }
-sub create_from_awl_indexes {
+sub create_from_awl_indexes($) {
     my $self = shift;
     $self->do("CREATE INDEX $from_awl" . '_lseen ' .
 	     "ON $from_awl (last_seen)")
@@ -850,7 +850,7 @@ sub create_domain_awl_table {
 	or $self->mydie('create_domain_awl_table error',
 			"Couldn't create table $tablename: $DBI::errstr");
 }
-sub create_domain_awl_indexes {
+sub create_domain_awl_indexes($) {
     my $self = shift;
     $self->do("CREATE INDEX $domain_awl" . '_lseen ' .
 	     "ON $domain_awl (last_seen)")
@@ -874,7 +874,7 @@ sub create_connect_table {
 	or $self->mydie('create_connect_table',
 			"Couldn't create table $tablename: $DBI::errstr");
 }
-sub create_connect_indexes {
+sub create_connect_indexes($) {
     my $self = shift;
     $self->do("CREATE INDEX $connect" . '_idx ' .
 	     "ON $connect (src, sender_domain, sender_name)")
@@ -886,7 +886,7 @@ sub create_connect_indexes {
 			"couldn't create index on $connect (first_seen)");
 }
 
-sub create_config_table {
+sub create_config_table($) {
     my $self = shift;
     $self->do("CREATE TABLE $config " .
 	      '(parameter varchar(255) NOT NULL, ' .
@@ -898,7 +898,7 @@ sub create_config_table {
     $self->setconfig('version', $DB_VERSION);
 }
 
-sub create_optin_domain_table {
+sub create_optin_domain_table($) {
     my $self = shift;
     $self->do("CREATE TABLE $optin_domain " .
 	      '(domain varchar(255) NOT NULL, ' .
@@ -907,7 +907,7 @@ sub create_optin_domain_table {
 			"Couldn't create table $optin_domain: $DBI::errstr");
 }
 
-sub create_optin_email_table {
+sub create_optin_email_table($) {
     my $self = shift;
     $self->do("CREATE TABLE $optin_email " .
 	      '(email varchar(255) NOT NULL, ' .
@@ -916,7 +916,7 @@ sub create_optin_email_table {
 			"Couldn't create table $optin_email: $DBI::errstr");
 }
 
-sub create_optout_domain_table {
+sub create_optout_domain_table($) {
     my $self = shift;
     $self->do("CREATE TABLE $optout_domain " .
 	      '(domain varchar(255) NOT NULL, ' .
@@ -939,17 +939,17 @@ sub create_optout_email_table {
 ##########
 
 # don't try too hard to do exact matches here
-sub is_ipv4 {
+sub is_ipv4($) {
     my $addr = shift;
     return (($addr =~ /^[\d\.]*$/) ? 1 : 0);
 }
 
-sub is_ipv6 {
+sub is_ipv6($) {
     my $addr = shift;
     return (($addr =~ /^[0123456789abcdef:]*$/) ? 1 : 0);
 }
 
-sub class_c {
+sub class_c($) {
     my $addr = shift;
     if (is_ipv4($addr)) {
 	return join('.', (split(/\./, $addr))[0..2]);
@@ -962,7 +962,7 @@ sub class_c {
     }
 }
 
-sub get_last_addr_part {
+sub get_last_addr_part($) {
     my $addr = shift;
     if (is_ipv4($addr)) {
 	return (split(/\./, $addr))[3];
@@ -981,7 +981,7 @@ sub get_last_addr_part {
 
 # generic single-use addresses
 # normaliser
-sub deverp_user {
+sub deverp_user($$) {
     my ($user, $rcpt) = @_;
 
     ## Try to match single-use addresses
@@ -1022,7 +1022,7 @@ sub deverp_user {
 # 1/ sender's user
 # 2/ sender's domain
 # 3/ sender's deverped address
-sub normalize_sender {
+sub normalize_sender($$$) {
     my $self = shift;
     my $from = lc shift;
     my $rcpt = lc shift;
@@ -1052,7 +1052,7 @@ sub normalize_sender {
 }
 
 # make sure rcpt will be VARCHAR storable
-sub normalize_rcpt {
+sub normalize_rcpt($$) {
     my $self = shift;
 
     # trim to 255 chars ( although "$user" . "@" . "$domain"
@@ -1069,7 +1069,7 @@ sub normalize_rcpt {
 
 ## Match connections to AWLs ##
 
-sub is_in_from_awl {
+sub is_in_from_awl($$$$) {
     my ($self, $sender_name, $sender_domain, $host) = @_;
 
     # last_seen less than $self->{sqlgrey}{awl_age} days ago
@@ -1096,7 +1096,7 @@ sub is_in_from_awl {
     }
 }
 
-sub is_in_domain_awl {
+sub is_in_domain_awl($$$) {
     my ($self, $sender_domain, $host) = @_;
 
     # last_seen less than $self->{sqlgrey}{awl_age} days ago
@@ -1124,7 +1124,7 @@ sub is_in_domain_awl {
 
 ## Put entries in AWLs ##
 
-sub put_in_from_awl {
+sub put_in_from_awl($$$$$) {
     my ($self, $sender_name, $sender_domain, $host, $first_seen) = @_;
 
     # delete old entries
@@ -1142,7 +1142,7 @@ sub put_in_from_awl {
 	      $self->quote($first_seen) . ',NOW())');
 }
 
-sub put_in_domain_awl {
+sub put_in_domain_awl($$$$) {
     my ($self, $sender_domain, $host, $first_seen) = @_;
 
     # delete old entries
@@ -1160,7 +1160,7 @@ sub put_in_domain_awl {
 
 ## Update AWL entries ##
 
-sub update_from_awl {
+sub update_from_awl($$$$) {
     my ($self, $sender_name, $sender_domain, $host) = @_;
 
     $self->do("UPDATE $from_awl " .
@@ -1170,7 +1170,7 @@ sub update_from_awl {
 	      ' AND src = ' . $self->quote($host));
 }
 
-sub update_domain_awl {
+sub update_domain_awl($$$) {
     my ($self, $sender_domain, $host) = @_;
 
     $self->do("UPDATE $domain_awl " .
@@ -1180,7 +1180,7 @@ sub update_domain_awl {
 }
 
 # check from_awl entries for a domain/IP
-sub count_from_awl {
+sub count_from_awl($$$) {
     my ($self, $sender_domain, $host) = @_;
 
     my $sth = $self->prepare_cached("SELECT COUNT(*) FROM $from_awl " .
@@ -1203,7 +1203,7 @@ sub count_from_awl {
 }
 
 # Check number of entries from a given IP in domain_awl
-sub count_src_domain_awl {
+sub count_src_domain_awl($$) {
     my ($self, $host) = @_;
 
     my $sth = $self->prepare_cached("SELECT COUNT(*) FROM $domain_awl " .
@@ -1226,7 +1226,7 @@ sub count_src_domain_awl {
 }
 
 # Check number of entries from a given IP in from_awl
-sub count_src_from_awl {
+sub count_src_from_awl($$) {
     my ($self, $host) = @_;
 
     my $sth = $self->prepare_cached("SELECT COUNT(*) FROM $from_awl " .
@@ -1249,7 +1249,7 @@ sub count_src_from_awl {
 }
 
 # Check number of entries from a given IP in connect
-sub count_src_connect {
+sub count_src_connect($$) {
     my ($self, $host) = @_;
 
     my $sth = $self->prepare_cached("SELECT COUNT(*) FROM $connect " .
@@ -1273,7 +1273,7 @@ sub count_src_connect {
 
 ## Cleanup AWL entries ##
 
-sub cleanup_from_awl {
+sub cleanup_from_awl($) {
     my ($self) = @_;
 
     my $rows = $self->do("DELETE FROM $from_awl " .
@@ -1282,10 +1282,10 @@ sub cleanup_from_awl {
 	                );
 
     $rows = 0 if (!defined $rows or $rows eq '0E0');
-    return $rows ? $rows : 0;
+    return $rows;
 }
 
-sub cleanup_domain_awl {
+sub cleanup_domain_awl($) {
     my ($self) = @_;
 
     my $rows = $self->do("DELETE FROM $domain_awl " .
@@ -1294,17 +1294,17 @@ sub cleanup_domain_awl {
 	                );
 
     $rows = 0 if (!defined $rows or $rows eq '0E0');
-    return $rows ? $rows : 0;
+    return $rows;
 }
 
-sub delete_domain_from_mail_awl {
+sub delete_domain_from_mail_awl($$$) {
     my ($self, $domain, $host) = @_;
     $self->do("DELETE FROM $from_awl " .
 	      'WHERE sender_domain = ' . $self->quote($domain) .
 	      ' AND src = ' . $self->quote($host));
 }
 
-sub delete_domain_from_connect {
+sub delete_domain_from_connect($$$) {
     my ($self, $domain, $host) = @_;
     $self->do("DELETE FROM $connect " .
 	      'WHERE sender_domain = ' . $self->quote($domain) .
@@ -1312,7 +1312,7 @@ sub delete_domain_from_connect {
 }
 
 # Active domain AWL for a domain/IP
-sub move_domain_from_mail_to_domain_awl {
+sub move_domain_from_mail_to_domain_awl($$$) {
     my ($self, $domain, $host) = @_;
 
     my $first_seen = $self->get_first_seen_in_from_awl($domain, $host);
@@ -1320,7 +1320,7 @@ sub move_domain_from_mail_to_domain_awl {
     $self->delete_domain_from_mail_awl($domain, $host);
 }
 
-sub get_first_seen_in_from_awl {
+sub get_first_seen_in_from_awl($$$) {
     my ($self, $domain, $host) = @_;
     my $sth = $self->prepare_cached("SELECT MIN(first_seen) FROM $from_awl " .
 				    'WHERE sender_domain = ? AND src = ?');
@@ -1346,7 +1346,7 @@ sub get_first_seen_in_from_awl {
 ## Connect
 
 # check for a valid reconnection
-sub in_connect {
+sub in_connect($$$$$) {
     my ($self, $sender_name, $sender_domain, $addr, $rcpt) = @_;
 
     # last_seen less than $self->{sqlgrey}{max_connect_age} hours ago
@@ -1377,7 +1377,7 @@ sub in_connect {
 }
 
 # check for early reconnection
-sub recently_in_connect {
+sub recently_in_connect($$$$$) {
     my ($self, $sender_name, $sender_domain, $addr, $rcpt) = @_;
 
     # last_seen less than $self->{sqlgrey}{reconnect_delay} minutes ago
@@ -1404,7 +1404,7 @@ sub recently_in_connect {
 }
 
 # add a first attempt
-sub put_in_connect {
+sub put_in_connect($$$$$) {
     my ($self, $sender_name, $sender_domain, $addr, $rcpt) = @_;
 
     # create new entry
@@ -1418,7 +1418,7 @@ sub put_in_connect {
 }
 
 # For logging purpose
-sub get_reconnect_delay {
+sub get_reconnect_delay($$$$$) {
     my ($self, $sender_name, $sender_domain, $addr, $rcpt) = @_;
 
     my $query;
@@ -1451,7 +1451,7 @@ sub get_reconnect_delay {
 }
 
 # Clean connect entries for a whitelisted mail/IP
-sub delete_mail_ip_from_connect {
+sub delete_mail_ip_from_connect($$$$) {
     my ($self, $deverp_sender_name, $sender_domain, $addr) = @_;
 
     $deverp_sender_name =~ s/#/%/g;
@@ -1463,7 +1463,7 @@ sub delete_mail_ip_from_connect {
 }
 
 # clean probable SPAM attempts and log them
-sub cleanup_connect {
+sub cleanup_connect($) {
     my $self = shift;
     my $tstamp = $self->past_tstamp($self->{sqlgrey}{max_connect_age}, 'HOUR');
 
@@ -1496,11 +1496,11 @@ sub cleanup_connect {
    # DBI returns 0E0 if no rows is affected.
    $rows = 0 if (!defined $rows or $rows eq '0E0');
 
-   return $rows ? $rows : 0;
+   return $rows;
 }
 
 ## General cleanup
-sub cleanup {
+sub cleanup($) {
     my ($self) = @_;
     my $time = time();
     my $frows = $self->cleanup_from_awl();
@@ -1511,7 +1511,7 @@ sub cleanup {
 }
 
 ## Forked cleanup
-sub fork_cleanup {
+sub fork_cleanup($) {
     my $self = shift;
     my $pid = fork();
     if (!defined $pid) {
@@ -1535,7 +1535,7 @@ sub fork_cleanup {
 ## Whitelisting ##
 ##################
 
-sub init_whitelists {
+sub init_whitelists($) {
     my $self = shift;
     $self->read_ip_whitelists();
     $self->read_fqdn_whitelists();
@@ -1544,31 +1544,31 @@ sub init_whitelists {
     $self->{sqlgrey}{dynfqdntime} = get_mtime($dyn_fqdn_whitelist_file);
 }
 
-sub read_ip_whitelists {
+sub read_ip_whitelists($) {
     my $self = shift;
     $self->read_static_ip_whitelist();
     $self->read_dyn_ip_whitelist();
 }
 
-sub read_fqdn_whitelists {
+sub read_fqdn_whitelists($) {
     my $self = shift;
     $self->read_static_fqdn_whitelist();
     $self->read_dyn_fqdn_whitelist();
 }
 
-sub read_static_ip_whitelist {
+sub read_static_ip_whitelist($) {
     my $self = shift;
     $self->{sqlgrey}{stat_ip_whitelist} =
 	$self->read_an_ip_whitelist($stat_ip_whitelist_file);
 }
 
-sub read_dyn_ip_whitelist {
+sub read_dyn_ip_whitelist($) {
     my $self = shift;
     $self->{sqlgrey}{dyn_ip_whitelist} =
 	$self->read_an_ip_whitelist($dyn_ip_whitelist_file);
 }
 
-sub read_an_ip_whitelist {
+sub read_an_ip_whitelist($$) {
     my $self = shift;
     my $file = shift;
     # Prepare empty whitelist
@@ -1601,19 +1601,19 @@ sub read_an_ip_whitelist {
     return $whitelist;
 }
 
-sub read_static_fqdn_whitelist {
+sub read_static_fqdn_whitelist($) {
     my $self = shift;
     $self->{sqlgrey}{stat_fqdn_whitelist} =
 	$self->read_an_fqdn_whitelist($stat_fqdn_whitelist_file);
 }
 
-sub read_dyn_fqdn_whitelist {
+sub read_dyn_fqdn_whitelist($) {
     my $self = shift;
     $self->{sqlgrey}{dyn_fqdn_whitelist} =
 	$self->read_an_fqdn_whitelist($dyn_fqdn_whitelist_file);
 }
 
-sub read_an_fqdn_whitelist {
+sub read_an_fqdn_whitelist($$) {
     my $self = shift;
     my $file = shift;
 
@@ -1653,32 +1653,32 @@ sub read_an_fqdn_whitelist {
     return $whitelist;
 }
 
-sub update_dyn_whitelists {
+sub update_dyn_whitelists($) {
     my $self = shift;
     $self->update_dyn_ip_whitelist();
     $self->update_dyn_fqdn_whitelist();
 }
 
 # Set the reload flag
-sub mark_reload_request {
+sub mark_reload_request() {
     $reload = 1;
 }
 
 # When not in the middle of a processing...
 # check the reload flag
-sub got_reload_request {
+sub got_reload_request() {
     my $myreload = ($reload == 1);
     $reload = 0;
     return ($myreload);
 }
 
-sub update_static_whitelists {
+sub update_static_whitelists($) {
     my $self = shift;
     $self->read_static_ip_whitelist();
     $self->read_dyn_fqdn_whitelist();
 }
 
-sub get_mtime {
+sub get_mtime($) {
     my $file = shift;
     # file exists ?
     if (stat($file)) {
@@ -1689,7 +1689,7 @@ sub get_mtime {
     }
 }
 
-sub update_dyn_ip_whitelist {
+sub update_dyn_ip_whitelist($) {
     my $self = shift;
     my $dyntime = get_mtime($dyn_ip_whitelist_file);
     if ($dyntime > $self->{sqlgrey}{dyniptime}) {
@@ -1699,7 +1699,7 @@ sub update_dyn_ip_whitelist {
     }
 }
 
-sub update_dyn_fqdn_whitelist {
+sub update_dyn_fqdn_whitelist($) {
     my $self = shift;
     my $dyntime = get_mtime($dyn_fqdn_whitelist_file);
     if ($dyntime > $self->{sqlgrey}{dynfqdntime}) {
@@ -1709,7 +1709,7 @@ sub update_dyn_fqdn_whitelist {
     }
 }
 
-sub is_in_whitelists {
+sub is_in_whitelists($$$$$$) {
     ## expects all parameters
     ## for rcpt_whitelists for example
     my ($self, $sender_name, $sender_domain, $ip, $fqdn, $rcpt) = @_;
@@ -1717,19 +1717,19 @@ sub is_in_whitelists {
 	$self->is_in_fqdn_whitelists($fqdn));
 }
 
-sub is_in_ip_whitelists {
+sub is_in_ip_whitelists($$) {
     my ($self, $ip) = @_;
     return ($self->is_in_static_ip_whitelist($ip)
 	or $self->is_in_dyn_ip_whitelist($ip));
 }
 
-sub is_in_fqdn_whitelists {
+sub is_in_fqdn_whitelists($$) {
     my ($self, $fqdn) = @_;
     return ($self->is_in_static_fqdn_whitelist($fqdn)
 	or $self->is_in_dyn_fqdn_whitelist($fqdn));
 }
 
-sub is_in_static_ip_whitelist {
+sub is_in_static_ip_whitelist($$) {
     my ($self, $ip) = @_;
     if (defined $self->{sqlgrey}{stat_ip_whitelist}->{IP}{$ip}) {
 	$self->mylog('whitelist', 3, "$ip in static IP whitelist");
@@ -1742,7 +1742,7 @@ sub is_in_static_ip_whitelist {
     return 0;
 }
 
-sub is_in_dyn_ip_whitelist {
+sub is_in_dyn_ip_whitelist($$) {
     my ($self, $ip) = @_;
     if (defined $self->{sqlgrey}{dyn_ip_whitelist}->{IP}{$ip}) {
 	$self->mylog('whitelist', 3, "$ip in dynamic IP whitelist");
@@ -1755,21 +1755,21 @@ sub is_in_dyn_ip_whitelist {
     return 0;
 }
 
-sub is_in_static_fqdn_whitelist {
+sub is_in_static_fqdn_whitelist($$) {
     my ($self, $fqdn) = @_;
     return $self->is_in_fqdn_whitelist($fqdn,
 				       $self->{sqlgrey}{stat_fqdn_whitelist},
 				       'static');
 }
 
-sub is_in_dyn_fqdn_whitelist {
+sub is_in_dyn_fqdn_whitelist($$) {
     my ($self, $fqdn) = @_;
     return $self->is_in_fqdn_whitelist($fqdn,
 				       $self->{sqlgrey}{dyn_fqdn_whitelist},
 				       'dynamic');
 }
 
-sub is_in_fqdn_whitelist {
+sub is_in_fqdn_whitelist($$$$) {
     my ($self, $fqdn, $whitelist, $type) = @_;
     # check hostnames
     if (defined $whitelist->{system}->{$fqdn}) {
@@ -1798,7 +1798,7 @@ sub is_in_fqdn_whitelist {
 ## Optin / Optout ##
 ####################
 
-sub greylisting_active {
+sub greylisting_active($$) {
     my ($self, $email) = @_;
     my $domain = (split(/@/, $email))[1];
     if ($self->{sqlgrey}{optmethod} eq 'optin') {
@@ -1820,7 +1820,7 @@ sub greylisting_active {
     }
 }
 
-sub is_in_optin_domain {
+sub is_in_optin_domain($$) {
     my ($self, $domain) = @_;
 
     my $sth = $self->prepare_cached("SELECT 1 FROM $optin_domain " .
@@ -1842,7 +1842,7 @@ sub is_in_optin_domain {
     }
 }
 
-sub is_in_optin_email {
+sub is_in_optin_email($$) {
     my ($self, $email) = @_;
 
     my $sth = $self->prepare_cached("SELECT 1 FROM $optin_email " .
@@ -1864,7 +1864,7 @@ sub is_in_optin_email {
     }
 }
 
-sub is_in_optout_domain {
+sub is_in_optout_domain($$) {
     my ($self, $domain) = @_;
 
     my $sth = $self->prepare_cached("SELECT 1 FROM $optout_domain " .
@@ -1886,7 +1886,7 @@ sub is_in_optout_domain {
     }
 }
 
-sub is_in_optout_email {
+sub is_in_optout_email($$) {
     my ($self, $email) = @_;
 
     my $sth = $self->prepare_cached("SELECT 1 FROM $optout_email " .
@@ -1912,13 +1912,13 @@ sub is_in_optout_email {
 ## Regexps for smart algorithm ##
 #################################
 
-sub init_smart_regexps {
+sub init_smart_regexps($) {
     my $self = shift;
     $self->read_smtp_server_regexp();
     $self->read_dyn_fqdn_regexp();
 }
 
-sub read_a_regexp {
+sub read_a_regexp($$) {
     my $self = shift;
     my $file = shift;
 
@@ -1944,13 +1944,13 @@ sub read_a_regexp {
     }
 }
 
-sub read_smtp_server_regexp {
+sub read_smtp_server_regexp($) {
     my $self = shift;
     $self->{sqlgrey}{smtp_server_re} =
 	$self->read_a_regexp($smtp_server_regexp_file);
 }
 
-sub read_dyn_fqdn_regexp {
+sub read_dyn_fqdn_regexp($) {
     my $self = shift;
     $self->{sqlgrey}{dyn_fqdn_re} =
 	$self->read_a_regexp($dyn_fqdn_regexp_file);
@@ -1958,7 +1958,7 @@ sub read_dyn_fqdn_regexp {
 
 ## client_identifier can be its IP-address or the class-C network
 ## we decide here
-sub client_identifier {
+sub client_identifier($$$) {
     my ($self, $addr, $fqdn) = @_;
     my $greymethod = $self->{sqlgrey}{greymethod};
     my $classc = class_c($addr);
@@ -2136,7 +2136,7 @@ sub smtpd_access_policy($$)
 	    $self->{sqlgrey}{reconnect_delay} . ' minutes');
 }
 
-sub read_conffile
+sub read_conffile($)
 {
     my $optional_file = shift;
     if (defined $optional_file) {
