@@ -73,6 +73,7 @@ $dflt{prepend}            = 1;
 $dflt{greymethod}         = 'smart';
 $dflt{optmethod}          = 'none'; # or 'optin' or 'optout'
 $dflt{db_cleandelay}	  = 30 * 60;
+$dflt{clean_method}       = 'sync';
 $dflt{admin_mail}         = 'postmaster';
 $dflt{log_ident}          = undef;
 $dflt{log} = { # note values here are not used
@@ -1499,7 +1500,18 @@ sub cleanup_connect($) {
    return $rows;
 }
 
-## General cleanup
+## Choose the actual cleanup method
+sub start_cleanup {
+    my $self = shift;
+    if ($self->{sqlgrey}{clean_method} eq 'sync') {
+        $self->cleanup();
+    } else {
+        $self->fork_cleanup();
+    }
+}
+
+
+## Synchronous cleanup
 sub cleanup($) {
     my ($self) = @_;
     my $time = time();
@@ -2055,7 +2067,7 @@ sub smtpd_access_policy($$)
     $self->update_dbnow();
     # Is it time for cleanups ?
     if (time() > $self->{sqlgrey}{next_maint}) {
-        $self->fork_cleanup();
+        $self->start_cleanup();
         $self->{sqlgrey}{next_maint} = time() + $self->{sqlgrey}{db_cleandelay};
     }
     # domain scale awl check
@@ -2296,6 +2308,7 @@ sub main()
 	    db_user         => $dflt{db_user},
             db_pass         => $dflt{db_pass},
 	    db_available    => 1, # used to trigger e-mails
+	    clean_method    => $dflt{clean_method},
 	    prepend         => $dflt{prepend},
 	    greymethod      => $dflt{greymethod},
 	    optmethod       => $dflt{optmethod},
@@ -2343,7 +2356,7 @@ sub pre_loop_hook() {
 
     $self->initdb();
     $self->mylog('other', 4, 'Initial cleanup');
-    $self->fork_cleanup();
+    $self->start_cleanup();
     $self->init_whitelists();
     $self->init_smart_regexps();
 
