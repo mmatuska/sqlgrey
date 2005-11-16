@@ -4,7 +4,7 @@ Jeff Rice:
 - deVERP tuning (especially for bounce/notify messages) (1.7.2),
 
 Michael Storz:
-- deVERP tuning replace recipients in sender address (1.7.2)
+- deVERP tuning replace recipients in sender address (1.7.2 and 1.7.3)
 
 Michel Bouissou:
 - source IP throttling (tarpitting) (1.7.0),

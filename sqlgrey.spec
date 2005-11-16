@@ -65,6 +65,10 @@ if [ $1 = 0 ]; then
 fi
 
 %changelog
+* Wed Nov 16 2005 Lionel Bouton <lionel-dev@bouton.name>
+ - 1.7.3 release
+ - fixes for a crash with '*' in email adresses
+
 * Tue Oct 25 2005 Lionel Bouton <lionel-dev@bouton.name>
  - 1.7.2 release
  - fixes for several errors in logging
