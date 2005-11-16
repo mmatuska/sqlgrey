@@ -990,31 +990,33 @@ sub deverp_user($$) {
     $user =~ s/^srs0=[^=]+=[^=]+=([^=]+)=([^=]+)$/srs0=#=#=$1=$2/;
     $user =~ s/^srs1=[^=]+=([^=]+)(=+)[^=]+=[^=]+=([^=]+)=([^=]+)$/srs1=#=$1$2#=#=$3=$4/;
 
-    ## BATV
-    # eliminate recipient put in originator
-    $rcpt =~ s/\./\[\.\*-\]+/g;
-    my ($rcpt_lhs, $rcpt_rhs) = split /\@/, $rcpt, 2;
-    # BATV implementations use third or first alternative (first by abuse.net)
-    my $pat = qr/$rcpt_lhs[=\?\*~\.]+?$rcpt_rhs|$rcpt_rhs[=\?\*~\.]+?$rcpt_lhs|$rcpt_lhs/;
-    # replace address with capital RCPT to be save with deletes
-    $user =~ s/(.+[\*=-])$pat(.*)/$1RCPT$2/;
-
     # strip extension, used sometimes for mailing-list VERP
     $user =~ s/\+.*//;
 
-    # strip frequently used bounce/return masks
-    $user =~ s/((bo|bounce|notice-return|notice-reply)[._-])[0-9a-z-_.]+$/$1#/g; # Added by JR
+    ## BATV
+    # eliminate recipient put in originator
+    my $dot_sep_re = '[\.\*-]+';
+    my $at_sep_re = '[=\?\*~\.]+';
+    my ($rcpt_lhs, $rcpt_rhs) = split /\@/, $rcpt, 2;
 
-    # strip hexadecimal sequences (doable in one regexp ?)
-    # don't strip a leading hex sequence though
-    my $tmp = '';
-    while ($tmp ne $user) {
-	$tmp = $user;
-	$user =~ s/([._-])[0-9a-f]+([._\*-])/$1#$2/g;
-	$user =~ s/([._-])[0-9a-z]{12,}([._-])/$1#$2/g; # Added by JR
-    }
-    $user =~ s/([._\/-])[0-9a-f]+$/$1#/g;
-    $user =~ s/([._-])[0-9a-z]{12,}$/$1#/g; # Added by JR
+    # quote all pattern metacharacters and replace '.' with match of possible separators
+    $rcpt_lhs = join $dot_sep_re, map { "\Q$_\E"}  split /\./, $rcpt_lhs;
+    $rcpt_rhs = join $dot_sep_re, map { "\Q$_\E"}  split /\./, $rcpt_rhs;
+
+    # build pattern with the 3 alternatives to match recipient in originator
+    # BATV implementations use third or first alternative (first by abuse.net)
+    my $pat = qr/$rcpt_lhs$at_sep_re$rcpt_rhs|$rcpt_rhs$at_sep_re$rcpt_lhs|$rcpt_lhs/;
+
+    # replace address with capital RCPT to be safe with deletes
+    # (MySQL matches case insensitive unfortunately)
+    $user =~ s/(?<=[\*=\.-])$pat|$pat(?=[\*=\.-])/RCPT/;
+
+    # strip frequently used bounce/return masks
+    $user =~ s/((bo|bounce|notice-return|notice-reply)[\._-])[0-9a-z-_\.]+$/$1#/g; # Added by JR
+
+    # strip hexadecimal sequences
+    # at the beginning only if user will contain at least 4 consecutive alpha chars
+    $user =~ s/^[0-9a-f]{2,}(?=[._\/=-].*[a-z]{4,})|(?<=[._\/=-])[0-9a-f]+(?=[._\/=-]|$)/#/g;
 
     return $user;
 }
