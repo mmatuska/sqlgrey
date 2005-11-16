@@ -28,7 +28,7 @@ use Getopt::Long qw(:config posix_default no_ignore_case);
 use Time::Local;
 use Date::Calc;
 
-my $VERSION = "1.7.2";
+my $VERSION = "1.7.3";
 
 # supports IPv4 and IPv6
 my $ipregexp = '[\dabcdef\.:]+';
