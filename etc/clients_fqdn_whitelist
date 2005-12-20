@@ -89,6 +89,11 @@ mx.01.mc.cs.ciphire.net
 mx.00.by.cs.ciphire.net
 mx.01.by.cs.ciphire.net
 
+# Bigfish.com: reported to only try once from one IP then only once
+# on another
+mail-par.bigfish.com
+mail-haw.bigfish.com
+
 # Do not add anything here (this file can be overwritten by SQLgrey updates and
 # update_sqlgrey_config), create a "clients_fqdn_whitelist.local" file
 # and add your own entries in there
