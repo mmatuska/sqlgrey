@@ -1,5 +1,11 @@
 Several people helped during SQLgrey development:
 
+Othmar Truniger:
+- corrected sqlgrey-logstats.pl weekly stats (1.7.4)
+
+Corey Sklenicka:
+- non standard DBMS listening port support (1.7.4)
+
 Jeff Rice:
 - deVERP tuning (especially for bounce/notify messages) (1.7.2),
 

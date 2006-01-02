@@ -111,7 +111,7 @@ sub last24h {
 sub lastweek {
     my $self = shift;
     $self->{end} = $self->today_tstamp();
-    $self->{begin} = $self->{begin} - (60 * 60 * 24 * 7);
+    $self->{begin} = $self->{end} - (60 * 60 * 24 * 7);
 }
 
 ##################
