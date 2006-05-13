@@ -1,6 +1,8 @@
+- don't break when syslog dies
+
 - experiment with throttling
 
-- make config parser awareof supported options and complain about unsupported ones
+- make config parser aware of supported options and complain about unsupported ones
 
 - modularize the whole process
 

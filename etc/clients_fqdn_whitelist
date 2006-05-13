@@ -94,6 +94,9 @@ mx.01.by.cs.ciphire.net
 mail-par.bigfish.com
 mail-haw.bigfish.com
 
+# CAcert only try once
+*.cacert.org
+
 # Do not add anything here (this file can be overwritten by SQLgrey updates and
 # update_sqlgrey_config), create a "clients_fqdn_whitelist.local" file
 # and add your own entries in there

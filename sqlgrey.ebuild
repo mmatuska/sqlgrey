@@ -25,8 +25,8 @@ KEYWORDS="~x86 ~amd64"
 
 pkg_setup() {
 	has_version dev-perl/IO-Multiplex || die "IO-Multiplex needed. Please emerge it or run g-cpan.pl IO::Multiplex"
-	id sqlgrey 2>/dev/null || enewgroup sqlgrey
-	id sqlgrey 2>/dev/null || enewuser sqlgrey -1 /bin/false /var/spool/sqlgrey sqlgrey
+	enewgroup sqlgrey
+	enewuser sqlgrey -1 -1 /var/spool/sqlgrey sqlgrey
 }
 
 src_install () {
@@ -54,7 +54,7 @@ pkg_postinst() {
 	einfo
 	echo
 	einfo "To setup SQLgrey to run out-of-the-box on your system, run:"
-	einfo "ebuild /var/db/pkg/${CATEGORY}/${PF}/${PF}.ebuild config"
+	einfo "emerge --config ${PF}"
 	echo
 	ewarn "Read the documentation for more info (perldoc sqlgrey) or the"
 	ewarn "included howto /usr/share/doc/${PF}/HOWTO.gz"

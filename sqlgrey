@@ -763,7 +763,6 @@ sub cnctinfo($) {
     # only SQLite doesn't require a hostname or port
     if (! $self->SQLite()) {
         $dsn .= ';host=' . $self->{sqlgrey}{db_host};
-print "DEBUG: " . $self->{sqlgrey}{db_port} . "\n";
         if ($self->{sqlgrey}{db_port} ne "default") {
             $dsn .= ';port=' . $self->{sqlgrey}{db_port};
         }
