@@ -1,0 +1,130 @@
+  ###################################
+  ## SQLgrey support for DBCluster ##
+  ###################################
+
+Database clustering behaviour is enabled by the 'db_cluster' 
+configuration variable in /etc/sqlgrey/sqlgrey.conf
+
+## Default
+
+By default db_cluster is set to 'off'. 
+
+## DBClustering
+
+Theese functions allow you to work with a cluster of databases (and 
+mailservers).
+This is very usefull for places where the mailservers are already being
+clustered through eg. lvs.
+It is also usefull if you simply want all your mailservers to use the same
+tables (eg. the Auto-whitelists). And lastly, it is usefull for distributing high db load.
+
+NOTE: THIS HAS BEEN TESTED WITH MySQL ONLY.
+
+## DBCluster - what does it do
+
+Basically, dbclustering uses normal DBI through an override module that allows 
+it to have connections to several database servers instead of just one. 
+(Module used, is DBIx::DBCluster is made by Alex Rak, slightly modified)
+
+What this means to you, is easy access to distributing sqlgrey's queries among
+several database servers. This is probably best explained with an example:
+
+	[internet]
+	    |
+     [Load balancer]
+      /    |     \    
+[mail1] [mail2] [mail3] [ect.]
+
+In this case, you have 3 mailserver that semi random gets connections from internet. 
+Let each mailserver have its own SQL-server on localhost, since using 1 common for all servers can
+be to heavy for some setups.
+
+If [mail1] gets a new request, it'll greylist, respond "450" and stick client into the 
+"connect" table. Now heres the problem. Client backs off, and comes back later to try 
+again, but there is no garantee it'll get [mail1] again. Infact, if it doesnt, the
+greylisting will happen all over.
+
+The solution is to use DBClustering. Each mailserver STILL has its own SQL-server, but
+we add a master-sql and let the local sql-servers be replication slaves:
+
+       [internet]
+           |
+     [Load balancer]
+      /    |     \    
+[mail1] [mail2] [mail3] [ect.]
+      \    |      /
+       [DB-Master]
+
+
+We enable DBCluster in sqlgrey, set [DB-Master] as "db_host" and set read_hosts=localhost
+
+Now, all write operations will be directed to [DB-Master]. Using normal SQL-replication, the
+local DB's will get all new changes and thus, be an excact copy of the master.
+All read operations are done to localhost, removing load from the master, and speeding up the
+read time, since the request doesnt have to travel over the network.
+
+Sounds complicated? It isnt.. Read on..
+
+## Setting up DBClustering
+
+Step 1. Set up a replication db-cluster. This is not covered here.
+        Check your manual for whatever DB your using. MySQL's replication howto can be found
+	here: http://dev.mysql.com/doc/refman/5.0/en/replication-howto.html
+
+Step 2. in sqlgrey.conf, set db_cluster = on
+
+Step 3. Change db_host to point to your MASTER-SQL. db_host becomes your "write host"
+
+Step 4. Add one or more sqlservers to read_hosts. (eg. read_hosts=localhost)
+
+Step 5. Choose one sqlgrey server to do db-cleanup (read more below). At a prompt on that host
+        type "hostname". Add the resulting hostname to db_cleanup_hostname. (eg. db_cleanup_hostname=mail1)
+
+And youre done.
+
+## Configuration directive: db_cleanup_hostname
+
+Its probably not desirable to have every sqlgrey in the cluster issuing db-cleanup every 30 minutes to the
+master-sql.
+
+To get around this problem, you can choose one server that does the cleanup. Every sqlgrey will query its own 
+hostname upon startup and the hostname that matches the db_cleanup_hostname will do the cleanup.
+Since it usually isnt desirable to have differing configuration files on every host in a cluster, using hostname
+seems the best solution. This way, sqlgrey.conf can be identical on every node in the cluster.
+
+The hostname corrosponds to the output of the "hostname" command on linux.
+$ hostname
+mailhost-1
+
+In sqlgrey.conf set:
+db_cleanup_hostname=mailhost-1
+
+
+## Configuration directive: read_hosts
+
+read_hosts must be set to the hostnames/IP's of the "read_only" database hosts.
+It can contain 1 or more hosts, seperated by comma. 
+Read requests will be distributed equally among "read_hosts".
+
+Remember that "db_host" becomes your "write-only" host upon enabling clustering. Should you wish to read from 
+the "db_host" as well as say, localhost, simply add it to read_hosts.
+
+Examples:
+---------
+Write to master, read from localhost:
+	db_host=my-master.example.com
+	read_hosts=localhost
+
+Write to master, read from localhost and master:
+	db_host=my-master.example.com
+	read_hosts=localhost,my-master.example.com
+
+Write to master, read from 3 slaves:
+	db_host=my-master.example.com
+	read_hosts=slave-1.example.com,slave-2.example.com,slave-3.example.com
+
+
+
+
+
+
