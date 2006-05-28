@@ -1,0 +1,37 @@
+# Discrimination regular expressions.
+#
+# Format:
+# <postfix_attributes> <comparison_operator> <regular_expression>
+#
+# Format Explained:
+# regular_expression  = any valid perl regular expression
+# comparison_operator = either =~ for equal to, or !~ for NOT equal to.
+# postfix_attributes  = Any valid attribute delivered from postfix. 
+#			Common values: client_address, client_name, helo_name, sender, recipient
+#
+# A few usefull examples and defaults.
+# Only greylist if one of the following expressions are true
+
+# client_name =~ (yahoo|hotmail|dhcp|proxy)\.  # An example on discimination simply based on parts
+					       # of the reverse-dns
+
+
+client_name =~ \.(cn|br|tw|jp|th|nz)$	# if reverse-dns of client is one of theese TLD's
+# 
+# Or the other way around:
+# client_name !~ \.(dk|uk|fi|no|se)$ 	# if reverse dont is NOT one of theese
+
+sender =~ \.(com|net|org)@		# If sender address is like eg. "free-stuff.com@hotmail.com"
+helo_name !~ \w\.[a-zA-Z]{2,4}$  	# If helo doesnt contain a fqdn
+
+client_name =~ ^unknown$		# No reverse DNS
+client_name =~ \d+-\d+-\d+-\d+          # Looks like DSL line
+client_name =~ ^.{0,3}0?x[0-9a-f]{8}    # Looks like DSL line
+client_name =~ (gmail|hotma\w+|yahoo)\.\w+$     # if reverse-dns of client is one of theese TLD's
+
+#Accounts names that typically recieve tons of spam
+recipient =~ ^(admin(istrator)?|info|advertising|contact|guest|uucp|test|service|promo|(host|web)master|account(ing|s))@
+
+
+# sender =~ (microsoft|paypal|ebay|FREE)	# if any part of the sender is one of theese
+
