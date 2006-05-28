@@ -14,6 +14,17 @@ if the database host breaks your whole email infrastructure breaks too
 The fact that queries are serialised at the SQLgrey level might also help
 performance by avoiding too much parallel queries.
 
+# Use DBClustering
+
+Allows you to distribute load between several database servers. 
+See README.DBCLUSTER
+
+# Use Discrimination
+
+Alternative approach to greylisting where you make selective rules to allow some
+hosts to bypass greylisting entirely, based on how they "look" and "talk".
+See README.DISCRIMINATION
+
 # Optin/optout related performance
 
 See README.OPTINOUT, ## Performance guidelines
