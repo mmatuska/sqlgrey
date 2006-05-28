@@ -1,0 +1,120 @@
+  ############################
+  ## SQLgrey Discrimination ##
+  ############################
+
+Discrimination behaviour is enabled by the 'discrimination' 
+configuration variable in /etc/sqlgrey/sqlgrey.conf
+
+## Default
+
+By default discrimination is set to 'off'. SQLgrey will apply greylisting
+(with the default whitelisting and auto-whitelisting described in the
+HOWTO) to every message.
+
+By default 'discrimination_add_rulenr' is 'off'. If set to on, the 
+greylist reply to the client will have the rule number added to the end 
+of the rejection text. (eg. 'Greylisted for 5 minutes (2)').
+
+## Discrimination
+
+Discrimination based greylisting is only usefull if you DO NOT want to
+greylist everybody. There may be several reasons for this.
+For example it can be used as a soft transistion to start greylisting, 
+slowly  over time  making it more and more restrictive. Or it can help 
+you convince management to allow you to do greylisting by explaining 
+that you'd only greylist "anything suspicous" and thus, not your own 
+customers.
+
+
+## Discrimination - what is it
+
+This feature was pretty hard to find a name for, but discrimination
+describes pretty well what it does. It discriminates ;).
+
+I think of it as "the airport principle". Everybody is let onto the
+plane UNLESS they find you suspicous. You might have long hair,
+wear a turban, have dark skin or simply wearing a t-shirt saying 
+"explosive" or "GNU rocks". Then you will, by discrimination, be
+held back for further analysis.
+
+The same principle applies here. Everyone is whitelisted UNLESS they
+look suspicous. If so, they have to go through greylisting.
+What is suspicous is defined in the 
+/etc/sqlgrey/discrimination.regexp file. In here one defines regular
+expression that will be used to check different attributes.
+
+Example:
+sender =~ @microsoft.com$
+
+This line simply defines, that if the senders address ends on 
+microsoft.com, its suspicous and thus will be greylisted.
+
+Another example:
+sender !~ ^(god|allah|jesus)@heaven.com$
+
+Note the !~ which means "anything that does NOT match, is suspicous".
+In this particular example we say: "We trust god, allah or jesus
+sending from heaven.com, but EVERYONE else will be greylisted."
+
+
+## Rule Details
+
+The rules in /etc/sqlgrey/discrimination.regexp are defines by the
+following triplet:
+attribute comparison-operator regex
+
+Valid comparison operators are:
+=~ 	Equal to
+!~	Not Equal to
+
+Valid attributes are anyhing sendt from postfix to the policy deamon,
+but the ill explain the most common (and usefull) here:
+sender		= the From address (from MAIL FROM:)
+recipient	= the recipients mail address (from RCPT TO:)
+client_address	= IP address of the client
+client_name	= Reverse-dns name of the client
+helo_name	= The text entered as "helo <text>"
+
+
+Valid regular expression are simply perl compatable regular expressions.
+(without the "/" in beginning and end).
+
+## Configuration directive: discrimination_add_rulenr
+
+'discrimination_add_rulenr=yes' adds the rule number of the rule that caused
+the greylisting to the end of the rejection text, like this:
+ Greylisted for 5 minutes (2)
+
+In this case, 2 means the second (valid) regular expression in the file,
+caused the greylisting.
+
+This feature is to allow the support department to help customers figure out
+why, if their mail gets greylisted.
+
+
+## Rule tips
+
+Its hard to define what is worthy of another look, and its definently not
+a 100% solution. If you have the guts and/or oppotunity, you should go with
+normal greylisting.
+I look often at our maillog and by doing so, start to see patterns to what
+spam looks like. You should do the same to find out whats good for 
+greylisting, but some general tips are:
+- missing reverse-dns
+- mails from microsoft, fbi, paypal, ebay and the likes
+- NULL senders. (blank sender address)
+- mailaddresses with special chars (eg. $ or *)
+
+The first one takes alot of the trash. So does NULL senders, but be advised
+that NULL senders are also legaly used in bounce mails.
+
+## Performance guidelines
+
+It doesnt take much to do this check if you keep your list of expressions
+within reasonable limits. Actually this feature should be a performance 
+saver, as it takes away a bunch of sql load, depending on how much you 
+discriminate.
+
+This function is being used in a real-life scenario with ~100.000 accounts
+being checked by 10 regular expressions. There is no measurable perfomance 
+loss.
