@@ -1,0 +1,28 @@
+
+This package is included in the sqlgrey distribution for 2 reasons.
+
+1. I couldnt really get dynamic loading, based on the existense of the module to work.
+2. Ive added/changed a few things to DBCluster.pm. 
+
+I wrote to the maintainer of DBCluster, but got no reply. So if i want to keep my additions, ill have to include them here :)
+
+The most significant addition is the WRITE_HOSTS_NEVER_READ option. 
+By default, if you add eg. 1. write_host (eg. mysql master) and 1 read_hosts (mysql slave), this module will also use the write host for reading.
+
+This is bad news in my setup.. Every mailserver has a mysql-slave running on localhost. 1 master-server takes all the writes.
+So the correct setup is:
+read_host = localhost
+write_host = my-master.somewhere.net
+
+Since i didnt want 20 mailservers doing reads from BOTH localhost and the master, i had to add this option that prohibits reads from 
+write_hosts.
+(This can be overridden if you add the master-sql as a read_hosts as well).
+
+
+Other than that, im fairly sure that sqlgrey will work fine with the original DBCluster, if you should wish to do so.
+
+
+-------
+Original author: Alex Rak - arak at cpan.org
+Modifications: dan at hacker.dk
+
