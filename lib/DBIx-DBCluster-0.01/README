@@ -1,0 +1,33 @@
+DBIx/DBCluster version 0.01
+===========================
+
+This module creates a database handler object that acts like, and
+has exactly the same properties and methods as DBI's database handler.
+In the background it creates multiple database connections to mirrored
+database servers. Acts as an application level load balancer.
+
+
+INSTALLATION
+
+To install this module type the following:
+
+   perl Makefile.PL
+   make
+   make test
+   make install
+
+
+DEPENDENCIES
+
+This module requires these other modules and libraries:
+
+  DBI version 1.37 or higher
+
+
+COPYRIGHT AND LICENCE
+
+Copyright (c) 2003 Alex Rak (arak@cpan.org).  All rights reserved.
+
+This program is free software; you can redistribute it and/or modify
+it under the same terms as Perl itself.
+

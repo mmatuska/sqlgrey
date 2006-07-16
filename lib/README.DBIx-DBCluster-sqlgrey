@@ -1,10 +1,13 @@
 
-This package is included in the sqlgrey distribution for 2 reasons.
+This package is included in the sqlgrey distribution for 3 reasons.
 
 1. I couldnt really get dynamic loading, based on the existense of the module to work.
 2. Ive added/changed a few things to DBCluster.pm. 
+3. The module has disapeared from the official CPAN.
 
 I wrote to the maintainer of DBCluster, but got no reply. So if i want to keep my additions, ill have to include them here :)
+
+NOTE: If anyone knows of a module that can replace this one, that is still being maintained, please let me know.
 
 The most significant addition is the WRITE_HOSTS_NEVER_READ option. 
 By default, if you add eg. 1. write_host (eg. mysql master) and 1 read_hosts (mysql slave), this module will also use the write host for reading.

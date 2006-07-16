@@ -1,0 +1,8 @@
+Revision history for Perl extension DBIx::DBCluster.
+
+0.01  Tue Jun 17 13:54:47 2003
+	- original version; framework created by h2xs 1.21
+
+      2006
+	- Modified for use in sqlgrey by Dan Faerch
+

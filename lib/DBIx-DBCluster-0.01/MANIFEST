@@ -1,0 +1,7 @@
+Changes
+DBCluster.pm
+Makefile.PL
+MANIFEST
+README
+lib/DBIx/DBCluster/Config.pm
+test.pl
