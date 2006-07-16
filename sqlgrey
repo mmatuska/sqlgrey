@@ -24,13 +24,11 @@
 # see the documentation with 'perldoc sqlgrey'
 
 package sqlgrey;
-use lib "lib";
 use strict;
 use Pod::Usage;
 use Getopt::Long 2.25 qw(:config posix_default no_ignore_case);
 use Net::Server::Multiplex;
-use DBIx::DBCluster;
-#use DBI; #Replaced by override module DBIx::DBCluster.
+use DBI;
 
 #Store this hosts hostname in $HOSTNAME if Sys::Hostname is avail
 my $HOSTNAME;
@@ -797,6 +795,7 @@ sub connectdb($) {
     my $self = shift;
     # we can't use connect_cached as we create another connection
     # in the child responsible for cleanups
+    no warnings 'uninitialized'; #Perl will spew warn's if running DBI only
     if ($dflt{db_cluster} ne 'on') {
     
     	$self->{sqlgrey}{dbh} = DBI->connect($self->cnctinfo(),
@@ -2408,6 +2407,7 @@ sub main()
     read_conffile($opt{configfile});
     
     # Set some cluster specific stuff (move to an init_cluster() sub?)
+    no warnings 'uninitialized'; #Perl will spew warn's if running DBI only
     if ($dflt{db_cluster} eq 'on') {
             #if loglevel >= 4, enable debugging for DBCluster
             $DBIx::DBCluster::DEBUG = ($dflt{'loglevel'}>3)?1:0;
