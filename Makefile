@@ -9,6 +9,9 @@ MANDIR = $(ROOTDIR)/usr/share/man/man1
 VERSION := $(shell cat VERSION)
 TBZ2 = sqlgrey-$(VERSION).tar.bz2
 
+default:
+	@echo "See INSTALL textfile";
+
 all: manpage update-version
 
 update-version:
@@ -20,6 +23,18 @@ update-version:
 	cat sqlgrey-logstats.pl | sed 's/^my $$VERSION = .*;/my $$VERSION = "$(VERSION)";/' > sqlgrey-logstats.pl.new
 	mv sqlgrey-logstats.pl.new sqlgrey-logstats.pl
 	chmod a+x sqlgrey-logstats.pl
+
+use_dbcluster:
+	cat sqlgrey | sed 's/^use DBI;/use DBIx::DBCluster;/' > sqlgrey.new
+	mv sqlgrey.new sqlgrey
+	chmod a+x sqlgrey
+	cd lib/DBIx-DBCluster-0.01/;perl Makefile.PL;make;make install
+
+use_dbi:
+	cat sqlgrey | sed 's/^use DBIx::DBCluster;/use DBI;/' > sqlgrey.new
+	mv sqlgrey.new sqlgrey
+	chmod a+x sqlgrey
+	                        
 
 manpage:
 	perldoc -u sqlgrey | pod2man -n sqlgrey > sqlgrey.1
@@ -41,6 +56,7 @@ install: all
 	$(INSTALL) -m 644 etc/sqlgrey.conf $(CONFDIR)
 	$(INSTALL) -m 644 etc/clients_ip_whitelist $(CONFDIR)
 	$(INSTALL) -m 644 etc/clients_fqdn_whitelist $(CONFDIR)
+	$(INSTALL) -m 644 etc/discrimination.regexp $(CONFDIR)
 	$(INSTALL) -m 644 etc/dyn_fqdn.regexp $(CONFDIR)
 	$(INSTALL) -m 644 etc/smtp_server.regexp $(CONFDIR)
 	$(INSTALL) -m 644 etc/README $(CONFDIR)

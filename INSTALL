@@ -1,0 +1,19 @@
+Installing sqlgrey:
+-------------------
+
+No need to run initial make. Just run:
+make install
+
+
+With DBCluster support:
+-----------------------
+make use_dbcluster
+make install
+
+Revert back to DBI (from dbcluster):
+------------------------------------
+make use_dbi
+make install
+
+
+
