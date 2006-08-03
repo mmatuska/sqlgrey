@@ -8,9 +8,9 @@ make install
 To install with init-script, prepend
 your distro to 'install' like this:
 -----------------------------------
-make rh_install (redhat)
-make gentoo_install  
-make debian_install
+make rh-install (redhat)
+make gentoo-install  
+make debian-install
 
 
 With DBCluster support:
