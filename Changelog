@@ -1,3 +1,9 @@
+* Sun Aug 03 2006 Dan Faerch <dan-NOSPAM@hacker.dk>
+ - 1.7.4 release
+ - Added feature Discrimination
+ - Added feature DBCluster
+ - Added config option reject_code (eg. answer 451 instead of 450)
+
 * Wed Nov 16 2005 Lionel Bouton <lionel-dev@bouton.name>
  - 1.7.3 release
  - fixes for a crash with '*' in email adresses
