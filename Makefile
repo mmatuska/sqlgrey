@@ -69,7 +69,7 @@ gentoo-install: install
 	$(INSTALL) init/sqlgrey.gentoo $(INITDIR)/sqlgrey
 
 tbz2: update-version clean
-	cd ..;ln -s sqlgrey sqlgrey-$(VERSION);tar cjhf $(TBZ2) sqlgrey-$(VERSION);rm sqlgrey-$(VERSION)
+	cd ..;ln -s sqlgrey sqlgrey-$(VERSION);tar  cjhf  $(TBZ2) --exclude=CVS sqlgrey-$(VERSION);rm sqlgrey-$(VERSION)
 
 rpm: tbz2
 	rpmbuild -ta ../$(TBZ2)
