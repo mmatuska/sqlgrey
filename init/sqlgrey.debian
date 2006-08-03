@@ -11,7 +11,7 @@
 # Source function library.
 #. /etc/init.d/functions
 
-SQLGREY=/usr/local/sbin/sqlgrey
+SQLGREY=/usr/sbin/sqlgrey
 
 # See how we were called.
 case "$1" in
@@ -27,6 +27,7 @@ case "$1" in
 	fi
 
         [ "$ERRMSG" ] && echo -n " ($ERRMSG)" >&2 || true
+        echo "done."
 	;;
 
   stop)
