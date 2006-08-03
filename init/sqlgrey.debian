@@ -1,0 +1,51 @@
+#!/bin/sh
+#
+# sqlgrey:        Init script for sqlgrey postfix policy service
+#
+# chkconfig: 345 90 10
+# description: SQLgrey is a postfix grey-listing policy service.
+# pidfile: /var/run/sqlgrey.pid
+#
+# Hacked from the RH version  Karl O. Pinc <kop@meme.com>
+
+# Source function library.
+#. /etc/init.d/functions
+
+SQLGREY=/usr/local/sbin/sqlgrey
+
+# See how we were called.
+case "$1" in
+  start)
+	echo -n " sqlgrey"
+	# SQLite put files in the working directory
+        ERRMSG=$(/sbin/start-stop-daemon --chdir ~sqlgrey --pidfile /var/run/sqlgrey.pid --oknodo --startas $SQLGREY --start -- -d 2>&1)
+
+	if [ $? != 0 ]; then
+	    echo "(FAILED)"
+	    [ "$ERRMSG" ] && echo "ERROR: $ERRMSG" >&2 || true
+	    exit 1
+	fi
+
+        [ "$ERRMSG" ] && echo -n " ($ERRMSG)" >&2 || true
+	;;
+
+  stop)
+	echo -n " sqlgrey"
+	sqlgrey -k
+	echo_success
+	echo
+        start-stop-daemon --start --exec $SQLGREY -- -k
+	;;
+
+  restart)
+	$0 stop
+	sleep 1 # hack: missing REUSEADDR from Net::Server?
+	$0 start
+	;;
+
+  *)
+	echo "Usage: sqlgrey {start|stop|restart}"
+	exit 1
+esac
+
+exit 0
