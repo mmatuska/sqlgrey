@@ -16,7 +16,7 @@ SQLGREY=/usr/local/sbin/sqlgrey
 # See how we were called.
 case "$1" in
   start)
-	echo -n " sqlgrey"
+	echo -n "Starting sqlgrey: "
 	# SQLite put files in the working directory
         ERRMSG=$(/sbin/start-stop-daemon --chdir ~sqlgrey --pidfile /var/run/sqlgrey.pid --oknodo --startas $SQLGREY --start -- -d 2>&1)
 
@@ -30,10 +30,9 @@ case "$1" in
 	;;
 
   stop)
-	echo -n " sqlgrey"
+	echo -n "Stopping sqlgrey:"
 	sqlgrey -k
-	echo_success
-	echo
+	echo " done."
         start-stop-daemon --start --exec $SQLGREY -- -k
 	;;
 
