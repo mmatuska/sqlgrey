@@ -75,8 +75,8 @@ debian-install: install
 	ln -s ../init.d/sqlgrey /etc/rc2.d/S20sqlgrey 
 	ln -s ../init.d/sqlgrey /etc/rc3.d/S20sqlgrey 
 	ln -s ../init.d/sqlgrey /etc/rc4.d/S20sqlgrey 
-        ln -s ../init.d/sqlgrey /etc/rc5.d/S20sqlgrey
-        ln -s ../init.d/sqlgrey /etc/rc5.d/K20sqlgrey
+	ln -s ../init.d/sqlgrey /etc/rc5.d/S20sqlgrey
+	ln -s ../init.d/sqlgrey /etc/rc5.d/K20sqlgrey
 
 tbz2: update-version clean
 	cd ..;ln -s sqlgrey sqlgrey-$(VERSION);tar  cjhf  $(TBZ2) --exclude=CVS sqlgrey-$(VERSION);rm sqlgrey-$(VERSION)
