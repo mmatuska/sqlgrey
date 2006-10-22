@@ -7,9 +7,9 @@ To begin with you need a sqlgrey user :
 #####################
 
 SQLite: quick and dirty way. The database is integrated with sqlgrey.
-MySQL: lightweight DBRMS, quite fast but not as stable and standard
+MySQL: lightweight RDBMS, quite fast but not as stable and standard
 	 compliant as PostgreSQL.
-PostgreSQL: full-fledge, very mature DBRMS.
+PostgreSQL: full-fledge, very mature RDBMS.
 
 ###########
 ## SQLite 
@@ -33,9 +33,14 @@ directory: launch sqlgrey in its home directory.
 you need the DBD::MySQL perl module and a working MySQL server.
 
 # Howto:
-Create a sqlgrey database and a mysql sqlgrey user:
-with mysql:
-> CREATE DATABASE sqlgrey;
+Launch the 'mysql' command-line utility with admin rights.
+Create a sqlgrey database:
+- For MySQL < 5.0
+  > CREATE DATABASE sqlgrey;
+- For MYSQL >= 5.0
+  > CREATE DATABASE sqlgrey CHARACTER SET latin1;
+
+Then set up access rights:
 > GRANT ALL ON sqlgrey.* TO sqlgrey@localhost;
 
 Setup /etc/sqlgrey/sqlgrey.conf with
