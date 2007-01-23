@@ -836,6 +836,10 @@ sub connectdb($) {
         or $self->mylog('dbaccess', 0, "can't connect to DB: $DBI::errstr");
     }
 
+    #Ugly hack to make perl shut up about about "possible typo".
+    1 if ($DBIx::DBCluster::WRITE_HOSTS_NEVER_READ);
+    1 if ($DBIx::DBCluster::CLUSTERS);
+
 
     ## we can't touch dbh if it isn't defined!
     if (! defined $self->{sqlgrey}{dbh}) { return; }
@@ -2411,6 +2415,9 @@ sub main()
     if ($dflt{db_cluster} eq 'on') {
             #if loglevel >= 4, enable debugging for DBCluster
             $DBIx::DBCluster::DEBUG = ($dflt{'loglevel'}>3)?1:0;
+
+            #Ugly hack to make perl shut up about about "possible typo".
+            1 if ($DBIx::DBCluster::DEBUG);
 
             if ((defined $HOSTNAME) && (defined $dflt{db_cleanup_hostname})) {
                 
