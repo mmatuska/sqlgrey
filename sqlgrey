@@ -2266,7 +2266,7 @@ sub smtpd_access_policy($$)
     
     # Is it time for cleanups ?
     my $current_time = time();
-    if ($current_time() > ($self->{sqlgrey}{last_dbclean} + $self->{sqlgrey}{db_cleandelay})) {
+    if ($current_time > ($self->{sqlgrey}{last_dbclean} + $self->{sqlgrey}{db_cleandelay})) {
             # updateconfig() returns affected_rows
             if ($self->updateconfig('last_dbclean',$current_time,$self->{sqlgrey}{last_dbclean})) {
                   # If affected_rows > 0, its my job to clean the db
