@@ -498,7 +498,7 @@ sub updateconfig($$$) {
                                   $self->quote($value) .
                                   ' WHERE parameter = ' .
                                   $self->quote($param) .
-                                    (($old_value) ? " AND value = ".($self->quote($old_value)) : "") # Add to where statement, if old_value is defined
+                                    ((defined $old_value) ? " AND value = ".($self->quote($old_value)) : "") # Add to where statement, if old_value is defined
                                    );
 
     #DBI returns 0E0 if no rows were affected
@@ -2252,28 +2252,29 @@ sub smtpd_access_policy($$)
     # we need the value of now() in the database
     $self->update_dbnow();
 
-    #If last_dbclean == 0, reload value from DB
-    if ($self->{sqlgrey}{last_dbclean} == 0) {
+    # If !defined last_dbclean, reload value from DB
+    if (!defined $self->{sqlgrey}{last_dbclean}) {
         $self->{sqlgrey}{last_dbclean} = $self->getconfig('last_dbclean');
 
-        # if last_dbclean not found in db then make it.
+        # if last_dbclean not found in db then write it.
         if (!defined $self->{sqlgrey}{last_dbclean}) {
+	     # 0 will force a cleanup (unless db_cleandelay is really huge)
              $self->setconfig('last_dbclean',0);
-             $self->{sqlgrey}{last_dbclean}= 0;
+             $self->{sqlgrey}{last_dbclean} = 0;
         }
     }
     
     # Is it time for cleanups ?
-    if (time() > ($self->{sqlgrey}{last_dbclean} + $self->{sqlgrey}{db_cleandelay})) {
-
+    my $current_time = time();
+    if ($current_time() > ($self->{sqlgrey}{last_dbclean} + $self->{sqlgrey}{db_cleandelay})) {
             # updateconfig() returns affected_rows
-            if ($self->updateconfig('last_dbclean',time(),$self->{sqlgrey}{last_dbclean})) {
+            if ($self->updateconfig('last_dbclean',$current_time,$self->{sqlgrey}{last_dbclean})) {
                   # If affected_rows > 0, its my job to clean the db
-                  $self->{sqlgrey}{last_dbclean} = time();
+                  $self->{sqlgrey}{last_dbclean} = $current_time;
                   $self->start_cleanup();
             } else {
                   #If affected_rows == 0, then someone already cleaned db
-                  $self->{sqlgrey}{last_dbclean} = 0; #make sqlgrey reload time from db on next pass
+                  $self->{sqlgrey}{last_dbclean} = undef; #make sqlgrey reload time from db on next pass
             }
     }
 
@@ -2527,7 +2528,7 @@ sub main()
             awl_age         => $dflt{awl_age},
 	    # How many from match a domain/IP before a switch to domain AWL
 	    domain_level    => $dflt{group_domain_level},
-            last_dbclean    => 0, # zero triggers reload from db
+            last_dbclean    => undef, # triggers reload from db
 	    db_cleandelay   => $dflt{db_cleandelay}, # between table cleanups (seconds)
 
             db_type         => $dflt{db_type},
