@@ -3,7 +3,8 @@
 # sqlgrey: a postfix greylisting policy server using an SQL backend
 # based on postgrey
 # Copyright 2004 (c) ETH Zurich
-# Copyright 2004 (c) Lionel Bouton
+# Copyright 2004-2007 (c) Lionel Bouton
+# Parts copyrighted 2005-2007 Dan Faerch
 
 #
 #    This program is free software; you can redistribute it and/or modify
@@ -30,17 +31,12 @@ use Getopt::Long 2.25 qw(:config posix_default no_ignore_case);
 use Net::Server::Multiplex;
 use DBI;
 
-#Store this hosts hostname in $HOSTNAME if Sys::Hostname is avail
-my $HOSTNAME;
-eval  { require Sys::Hostname; };
-      if ($@) { $HOSTNAME = hostname();}
-      
 use POSIX ':sys_wait_h';
 
 use vars qw(@ISA);
 @ISA = qw(Net::Server::Multiplex);
 
-my $VERSION = "1.7.4";
+my $VERSION = "1.7.5";
 my $software = 'SQLgrey-' . $VERSION;
 
 my $DB_VERSION = 3;
@@ -2452,18 +2448,7 @@ sub main()
             #Ugly hack to make perl shut up about about "possible typo".
             1 if ($DBIx::DBCluster::DEBUG);
 
-            if ((defined $HOSTNAME) && (defined $dflt{db_cleanup_hostname})) {
-                
-                    if ($HOSTNAME eq $dflt{db_cleanup_hostname}) {
-                          $dflt{dont_db_clean} = 0;
-                    } else {
-                          $dflt{dont_db_clean} = 1;
-                    }
-                    
-                
-            } else {
-                    $dflt{dont_db_clean} = 0; 
-            }
+            $dflt{dont_db_clean} = (-e $dflt{conf_dir}."/dont_db_clean");
     }
     
     # Are we on a killing spray ?
