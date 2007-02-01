@@ -2023,9 +2023,10 @@ sub read_discimination_regexp_file($$) {
 	while (<REGEXP>) {
 	    chomp; 
 	    s/#.*//; # Remove comments
-	    if (m/(\w+)\s*(?:([=!])[~=]?)\s*(.*?)\s*$/) { # capture attrib-name, comparison-operater (as = or !) and regex
-	        $data->{$1}->{++$count}->{oper} = $2;     	    # Store the data in a hash (attrib-name => comparison-operator)
-	        $data->{$1}->{$count}->{regex} = qr/$3/; 	    # Store the data in a hash (attrib-name => compiled regex)
+	    if (m/(\w+)\s*(?:([=!]([~=]))?)\s*(.*?)\s*$/) { # capture attrib-name, comparison-operater (as = or !) and regex
+	        $data->{$1}->{++$count}->{oper} = $2;     	    	    # Store the data in a hash (attrib-name => comparison-operator)
+	        $data->{$1}->{$count}->{regex} = qr/$4/ if ($3 eq '~');	    # Store the data in a hash (attrib-name => compiled regex)
+	        $data->{$1}->{$count}->{regex} = $4     if ($3 eq '=');     # Store the data in a hash (attrib-name => attrib-name)
 	    } elsif (!m/^\s*$/) {
 	         $self->mylog('conf', 1, "Skipping invalid line in discrimination file: $_\n");
 	    }	    
@@ -2064,8 +2065,10 @@ sub discriminate_check($$) {
                  next;
            }
            
-           if ($regex->{oper} eq '=') { $match=1 if ($attr->{$var} =~ $regex->{regex}); } #if var equal to regex
-           if ($regex->{oper} eq '!') { $match=1 if ($attr->{$var} !~ $regex->{regex}); } #if var not equal to regex
+           if ($regex->{oper} eq '=~') { $match=1 if ($attr->{$var} =~ $regex->{regex}); } #if var equal to regex
+           if ($regex->{oper} eq '!~') { $match=1 if ($attr->{$var} !~ $regex->{regex}); } #if var not equal to regex
+           if ($regex->{oper} eq '==') { $match=1 if ($attr->{$var} eq $attr->{$regex->{regex}}); } #if var equal to variable
+           if ($regex->{oper} eq '!=') { $match=1 if ($attr->{$var} ne $attr->{$regex->{regex}}); } #if var not equal to variable
            
            if ($match) {
                    $self->mylog('conf', 3 , "Discrimination verdict: Greylist");
