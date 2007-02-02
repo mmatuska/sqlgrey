@@ -2073,7 +2073,7 @@ sub discriminate_check($$) {
            }
       }
     }
-    $self->mylog('conf', 3 , "Discrimination verdict: Dont Greylist ");
+    $self->mylog('conf', 2 , "Discrimination verdict: Dont Greylist ");
     return 0; #default DONT greylist
 }
 
