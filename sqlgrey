@@ -179,11 +179,11 @@ sub sendmail($$$) {
     }
 }
 
-sub mydie($$) {
+sub mydie($@) {
     my $self = shift;
-    my $error = shift;
-    $self->sendmail('SQLgrey died', $error);
-    die $error;
+    my @errors = @_;
+    $self->sendmail('SQLgrey died', join("\n", @errors));
+    die $errors[0];
 }
 
 ##########################
