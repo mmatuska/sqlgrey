@@ -125,14 +125,15 @@ sub mylog($$$$) {
 
     $message =~ s/%/%%/g; # protect sprintf used by Syslog
     if (!defined $self->{sqlgrey}{log}{$logtype}) {
-	$self->log($loglevel, "Unknown logtype ($logtype): $message");
+	# Protect against syslog going down
+	eval { $self->log($loglevel, "Unknown logtype ($logtype): $message"); };
     }
     if ($loglevel <= $self->{sqlgrey}{log}{$logtype}) {
 	# workaround: we can't disable the TCP connections
 	# logs if we use log_level 4 so log_level is capped by default
 	$loglevel = $loglevel > $self->{server}{log_level} ?
 	    $self->{server}{log_level} : $loglevel;
-	$self->log($loglevel, "$logtype: $message");
+	eval { $self->log($loglevel, "$logtype: $message"); }
     }
 }
 
