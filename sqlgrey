@@ -72,6 +72,7 @@ $dflt{db_host}            = 'localhost';
 $dflt{db_port}            = 'default';
 $dflt{db_user}            = 'sqlgrey';
 $dflt{db_pass}            = '';
+$dflt{db_prepare_cache}   = 0;
 $dflt{db_cluster}	  = 'off';
 $dflt{prepend}            = 1;
 $dflt{greymethod}         = 'smart';
@@ -245,28 +246,22 @@ sub do($$) {
 sub prepare_cached($$) {
     my $self = shift;
     my $query = shift;
-
-    if (! $self->{sqlgrey}{db_available}) {
-	$self->connectdb();
-    }
-    if (!defined $self->{sqlgrey}{dbh}) {
-	$self->db_unavailable();
-	return undef;
-    } else {
-	my $result = $self->{sqlgrey}{dbh}->prepare_cached($query);
-	if (! defined $result) {
-	    $self->db_unavailable();
-	} else {
-	    $self->db_available();
-	}
-	return $result;
-    }
+    return $self->_prepare($query, $self->{sqlgrey}{db_prepare_cache});
 }
 
-# prepar needs to check for a dbh
+# Wrapper for prepare without cache
 sub prepare($$) {
     my $self = shift;
     my $query = shift;
+    return $self->_prepare($query, 0);
+}
+
+# prepare* need to check for a dbh
+# and reconnect if disconnected
+sub _prepare($$$) {
+    my $self = shift;
+    my $query = shift;
+    my $cache = shift;
 
     if (! $self->{sqlgrey}{db_available}) {
 	$self->connectdb();
@@ -275,7 +270,12 @@ sub prepare($$) {
 	$self->db_unavailable();
 	return undef;
     } else {
-	my $result = $self->{sqlgrey}{dbh}->prepare($query);
+	my $result;
+	if ($cache) {
+	    $result = $self->{sqlgrey}{dbh}->prepare_cached($query);
+	} else {
+	    $result = $self->{sqlgrey}{dbh}->prepare($query);
+	}
 	if (! defined $result) {
 	    $self->db_unavailable();
 	} else {
@@ -453,7 +453,10 @@ sub getconfig($$) {
     }
     my $result = $sth->fetchall_arrayref();
     if ($#$result != 0) {
-        $self->mylog('dbaccess', 0, 'error: unexpected SQL result (getconfig)');
+	# Only log if there are multiple entries,
+	# nothing is allowed
+        $self->mylog('dbaccess', 0, 'error: unexpected SQL result (getconfig)')
+	    if ($#$result > 0);
 	return undef;
 	#$self->mydie('getconfig error',
 	#	     'Can\'t continue: unexpected config table read error');
@@ -499,7 +502,7 @@ sub updateconfig($$$) {
 
     #DBI returns 0E0 if no rows were affected
     $affected_rows = 0 if (!defined $affected_rows or $affected_rows eq '0E0');
-    return $affected_rows;		     
+    return $affected_rows;
 }
 
 sub insertconfig($$$) {
@@ -801,7 +804,7 @@ sub connectdb($) {
     # in the child responsible for cleanups
     no warnings 'uninitialized'; #Perl will spew warn's if running DBI only
     if ($dflt{db_cluster} ne 'on') {
-    
+
     	$self->{sqlgrey}{dbh} = DBI->connect($self->cnctinfo(),
 					 $self->{sqlgrey}{db_user},
 					 $self->{sqlgrey}{db_pass},
@@ -814,10 +817,10 @@ sub connectdb($) {
     } else {
 
         $self->mylog('dbaccess', 1, "Using DBIx:DBCluster");
-        
+
         my @read_hosts = split(/[,\s]+/ ,$dflt{'read_hosts'});
-        $self->mylog('dbaccess', 3, "Read_hosts: ".join(', ', @read_hosts)); 
-        
+        $self->mylog('dbaccess', 3, "Read_hosts: ".join(', ', @read_hosts));
+
 	#Setting up cluster db's
     	$DBIx::DBCluster::CLUSTERS = {
         		"$self->{sqlgrey}{db_host}" => {
@@ -825,11 +828,11 @@ sub connectdb($) {
             		'READ_HOSTS'   => [@read_hosts],
         		},
     	};
-    	
-    	#Flags tells DBCluster never to use WRITE_HOSTS for reading 
+
+    	#Flags tells DBCluster never to use WRITE_HOSTS for reading
     	#(unless specified in READ_HOSTS). This only works with Dan Faerch's patch to DBIx::DBCluster
-    	$DBIx::DBCluster::WRITE_HOSTS_NEVER_READ=1; 
-                
+    	$DBIx::DBCluster::WRITE_HOSTS_NEVER_READ=1;
+
     	$self->{sqlgrey}{dbh} = DBIx::DBCluster->connect($self->cnctinfo(),
                                          $self->{sqlgrey}{db_user},
                                          $self->{sqlgrey}{db_pass},
@@ -1992,17 +1995,17 @@ sub is_in_optout_email($$) {
 
 sub init_discrimination($) {
     my $self = shift;
-    
+
     # If discimination is enabled, load the regexps and
     # convert configuration value into a 1/0 (true/false) value
     if ($dflt{discrimination} =~ m/on/i) {
             $dflt{discrimination}=1;
             $dflt{discrimination_add_rulenr}= ($dflt{discrimination_add_rulenr}=~ m/on/i) ? 1 : 0;
-            
+
 	    $self->read_discrimination_regexp(); #Read regexp file
     } else {
             $dflt{discrimination}=0;
-    }    
+    }
 }
 
 
@@ -2017,7 +2020,7 @@ sub read_discimination_regexp_file($$) {
     } else {
 	my $count = 0;
 	while (<REGEXP>) {
-	    chomp; 
+	    chomp;
 	    s/#.*//; # Remove comments
 	    if (m/(\w+)\s*(?:([=!]([~=]))?)\s*(.*?)\s*$/) { # capture attrib-name, comparison-operater (as = or !) and regex
 	        $data->{$1}->{++$count}->{oper} = $2;     	    	    # Store the data in a hash (attrib-name => comparison-operator)
@@ -2025,7 +2028,7 @@ sub read_discimination_regexp_file($$) {
 	        $data->{$1}->{$count}->{regex} = $4     if ($3 eq '=');     # Store the data in a hash (attrib-name => attrib-name)
 	    } elsif (!m/^\s*$/) {
 	         $self->mylog('conf', 1, "Skipping invalid line in discrimination file: $_\n");
-	    }	    
+	    }
 	}
 	close REGEXP;
 	if ($count > 1) {
@@ -2044,28 +2047,28 @@ sub read_discrimination_regexp($) {
 # Check the attr fields delivered by postfix against the regexps.
 # If nothing matches, greylisting is skipped.
 sub discriminate_check($$) {
-    my ($self, $attr)  = @_; 
+    my ($self, $attr)  = @_;
     my $hash  = $self->{sqlgrey}{discrimination_re};
     my $match = 0;
-    
+
     keys %$hash; #This resets the hash. I have no idea why the iteration counter isnt reset upon leaving this function
-  
+
     #Loop loaded expressions
     while ( my ($var,$data) = each(%$hash)) {
       keys %$data; # reset hash
-      
+
       while ( my ($rulenr,$regex) = each(%$data)) {
-           
+
            if (!defined $attr->{$var}) {
                  $self->mylog('conf', 3 , "Discrimination attrib '$var' unsupported by postfix. Skipping.");
                  next;
            }
-           
+
            if ($regex->{oper} eq '=~') { $match=1 if ($attr->{$var} =~ $regex->{regex}); } #if var equal to regex
            if ($regex->{oper} eq '!~') { $match=1 if ($attr->{$var} !~ $regex->{regex}); } #if var not equal to regex
            if ($regex->{oper} eq '==') { $match=1 if ($attr->{$var} eq $attr->{$regex->{regex}}); } #if var equal to variable
            if ($regex->{oper} eq '!=') { $match=1 if ($attr->{$var} ne $attr->{$regex->{regex}}); } #if var not equal to variable
-           
+
            if ($match) {
                    $self->mylog('conf', 3 , "Discrimination verdict: Greylist");
                    $self->mylog('conf', 3 , "Discrimination check: $var $regex->{oper}~ $regex->{regex}");
@@ -2205,7 +2208,6 @@ sub smtpd_access_policy($$)
     my ($reject_text) =      $self->{sqlgrey}{reject_early} . ' Greylisted for ' .
   	                     $self->{sqlgrey}{reconnect_delay} . ' minutes';
 
-    
 
     # whitelist check
     if ($self->is_in_whitelists($sender_name, $sender_domain,
@@ -2230,7 +2232,6 @@ sub smtpd_access_policy($$)
     # discrimination checks
     if ($dflt{discrimination}) { # if discrimination is enabled
               # Check if sender data lets him skip greylisting
-              
               if ($discrimination_rulenr = $self->discriminate_check($attr)) { # note: Checks are run against the raw $attr fields.
                       #We DO greylist
                         # Add the rule.nr. (that is, linenumber in regexfile) of the rule that matched to response (helps the support department)
@@ -2262,7 +2263,7 @@ sub smtpd_access_policy($$)
              $self->{sqlgrey}{last_dbclean} = 0;
         }
     }
-    
+
     # Is it time for cleanups ?
     my $current_time = time();
     if ($current_time > ($self->{sqlgrey}{last_dbclean} + $self->{sqlgrey}{db_cleandelay})) {
@@ -2376,10 +2377,7 @@ sub read_conffile($)
         s/\s+$//;       # no trailing white
         next unless length;     # anything left ?
         my ($var, $value) = split(/\s*=\s*/, $_, 2);
-        $dflt{$var} = $value;
-	if (! defined $value) {
-	    $dflt{$var} = 1;
-	}
+        $dflt{$var} = $value || 1;
     }
     close CONF
 	or die "Couldn't close config file $config_file\n";
@@ -2438,19 +2436,19 @@ sub main()
 
     # Read the config file
     read_conffile($opt{configfile});
-    
+
     # Set some cluster specific stuff (move to an init_cluster() sub?)
     no warnings 'uninitialized'; #Perl will spew warn's if running DBI only
     if ($dflt{db_cluster} eq 'on') {
-            #if loglevel >= 4, enable debugging for DBCluster
+            # if loglevel >= 4, enable debugging for DBCluster
             $DBIx::DBCluster::DEBUG = ($dflt{'loglevel'}>3)?1:0;
 
-            #Ugly hack to make perl shut up about about "possible typo".
+            # Ugly hack to make perl shut up about about "possible typo".
             1 if ($DBIx::DBCluster::DEBUG);
 
             $dflt{dont_db_clean} = (-e $dflt{conf_dir}."/dont_db_clean");
     }
-    
+
     # Are we on a killing spray ?
     if (defined $opt{kill}) {
 	my $pidfile = $dflt{pidfile};
@@ -2506,6 +2504,7 @@ sub main()
 		                                          # process name
 		                                          $0 =~ m{.*/(.*)},
 	    syslog_logopt   => 'cons',
+	    Reuse           => 1,
         },
         sqlgrey => {
 	    # min time before reconnect (min)
@@ -2518,6 +2517,8 @@ sub main()
 	    domain_level    => $dflt{group_domain_level},
             last_dbclean    => undef, # triggers reload from db
 	    db_cleandelay   => $dflt{db_cleandelay}, # between table cleanups (seconds)
+
+            db_prepare_cache => $dflt{db_prepare_cache},
 
             db_type         => $dflt{db_type},
             db_name         => $dflt{db_name},
@@ -2551,7 +2552,7 @@ sub main()
 	$greymethod ne 'classc') {
 	pod2usage(1);
     }
-        
+
     $server->run;
 }
 
