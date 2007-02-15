@@ -5,6 +5,7 @@ Dan Faerch:
 - Regex based Discrimination (1.7.4)
 - Customizable reject_code (1.7.4)
 - sqlgrey maintainer for release 1.7.4
+(Is now a regular developer of sqlgrey. No need to list more contributions here)
 
 Othmar Truniger:
 - corrected sqlgrey-logstats.pl weekly stats (1.7.4)

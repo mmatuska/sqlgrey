@@ -1,3 +1,12 @@
+* Sun Aug 03 2006 Dan Faerch <dan.sqlgrey @hacker.dk>
+ - 1.7.5 release
+ - Changed db_cleanup. clean time stored in db for better handling,
+   especially in  clustered environments
+ - Fix for harmless warnings about "possible typo"
+ - Fix for sqlgrey dying if syslog is offline
+ - Filled feature req from Riaan Kok. Support "postfix attributes on both
+   sides".. Ie:  "client_name !~ helo_name"
+
 * Sun Aug 03 2006 Dan Faerch <dan-NOSPAM@hacker.dk>
  - 1.7.4 release
  - Added feature Discrimination
