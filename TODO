@@ -1,5 +1,3 @@
-- don't break when syslog dies
-
 - experiment with throttling
 
 - make config parser aware of supported options and complain about unsupported ones

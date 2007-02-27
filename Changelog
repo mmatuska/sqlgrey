@@ -1,4 +1,4 @@
-* Sun Aug 03 2006 Dan Faerch <dan.sqlgrey @hacker.dk>
+* Thu Feb 15 2007 Dan Faerch <dan.sqlgrey @hacker.dk>
  - 1.7.5 release
  - Changed db_cleanup. clean time stored in db for better handling,
    especially in  clustered environments

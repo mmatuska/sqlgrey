@@ -45,6 +45,7 @@ make clean
 %config(noreplace) /etc/sqlgrey/sqlgrey.conf
 /etc/sqlgrey/clients_ip_whitelist
 /etc/sqlgrey/clients_fqdn_whitelist
+/etc/sqlgrey/discrimination.regexp
 /etc/sqlgrey/dyn_fqdn.regexp
 /etc/sqlgrey/smtp_server.regexp
 /etc/sqlgrey/README
