@@ -53,7 +53,7 @@ make clean
 %pre
 getent group sqlgrey > /dev/null || /usr/sbin/groupadd sqlgrey
 getent passwd sqlgrey > /dev/null || /usr/sbin/useradd -g sqlgrey \
-     -d /var/sqlgrey sqlgrey
+     -d /var/sqlgrey -s /bin/true sqlgrey 
 
 %postun
 if [ $1 = 0 ]; then
