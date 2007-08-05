@@ -1,3 +1,8 @@
+* Sun Aug 05 2007 Lionel Bouton <lionel-dev@bouton.name>
+ - 1.7.6 release
+ - Database handling fix (deactivated InactiveDestroy unless needed)
+ - Reopen database connection on SIGUSR1
+
 * Thu Feb 15 2007 Dan Faerch <dan.sqlgrey @hacker.dk>
  - 1.7.5 release
  - Changed db_cleanup. clean time stored in db for better handling,
