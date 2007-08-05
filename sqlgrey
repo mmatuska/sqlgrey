@@ -2203,6 +2203,8 @@ sub smtpd_access_policy($$)
 	$self->update_static_whitelists();
 	$self->init_smart_regexps();
 	$self->init_discrimination();
+	$self->disconnectdb();
+	$self->connectdb();
     }
 
     #Generate the rejection response (moved here to avoid redundancy)
