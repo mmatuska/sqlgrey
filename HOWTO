@@ -258,3 +258,11 @@ for how to use it.
 If you use the ebuild and haven't done so yet, please fill a comment on
 http://bugs.gentoo.org/show_bug.cgi?id=71535
 
+#####################
+# Reloading SQLgrey #
+#####################
+
+If you change the sqlgrey.conf file you must restart SQLgrey to re-read it.
+If you change distributed whitelists (not local ones, they are automatically
+reloaded) or want to force a database reconnection you can force a reload by
+sending SIGUSR1 to the sqlgrey process.
