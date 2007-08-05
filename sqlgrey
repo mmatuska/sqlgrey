@@ -36,7 +36,7 @@ use POSIX ':sys_wait_h';
 use vars qw(@ISA);
 @ISA = qw(Net::Server::Multiplex);
 
-my $VERSION = "1.7.5";
+my $VERSION = "1.7.6";
 my $software = 'SQLgrey-' . $VERSION;
 
 my $DB_VERSION = 3;
@@ -801,18 +801,21 @@ sub initdb($) {
 
 sub connectdb($) {
     my $self = shift;
+
+    my $options = {PrintError => 0,
+		   AutoCommit => 1};
+    # InactiveDestroy has been reported to cause leaks, only use it when needed
+    $options->{InactiveDestroy} = 1 if $self->{sqlgrey}{clean_method} ne 'sync';
+
     # we can't use connect_cached as we create another connection
     # in the child responsible for cleanups
     no warnings 'uninitialized'; #Perl will spew warn's if running DBI only
     if ($dflt{db_cluster} ne 'on') {
 
     	$self->{sqlgrey}{dbh} = DBI->connect($self->cnctinfo(),
-					 $self->{sqlgrey}{db_user},
-					 $self->{sqlgrey}{db_pass},
-					 { PrintError => 0,
-					   AutoCommit => 1,
-					   InactiveDestroy => 1 }
-					)
+					     $self->{sqlgrey}{db_user},
+					     $self->{sqlgrey}{db_pass},
+					     $options)
 	or $self->mylog('dbaccess', 0, "can't connect to DB: $DBI::errstr");
 
     } else {
@@ -834,14 +837,13 @@ sub connectdb($) {
     	#(unless specified in READ_HOSTS). This only works with Dan Faerch's patch to DBIx::DBCluster
     	$DBIx::DBCluster::WRITE_HOSTS_NEVER_READ=1;
 
-    	$self->{sqlgrey}{dbh} = DBIx::DBCluster->connect($self->cnctinfo(),
-                                         $self->{sqlgrey}{db_user},
-                                         $self->{sqlgrey}{db_pass},
-                                         { PrintError => 0,
-                                           AutoCommit => 1,
-                                           InactiveDestroy => 1 }
-                                        )
-        or $self->mylog('dbaccess', 0, "can't connect to DB: $DBI::errstr");
+    	$self->{sqlgrey}{dbh} =
+	    DBIx::DBCluster->connect($self->cnctinfo(),
+				     $self->{sqlgrey}{db_user},
+				     $self->{sqlgrey}{db_pass},
+				     $options)
+		    or $self->mylog('dbaccess', 0,
+				    "can't connect to DB: $DBI::errstr");
     }
 
     #Ugly hack to make perl shut up about about "possible typo".
