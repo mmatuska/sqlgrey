@@ -805,7 +805,8 @@ sub connectdb($) {
     my $options = {PrintError => 0,
 		   AutoCommit => 1};
     # InactiveDestroy has been reported to cause leaks, only use it when needed
-    $options->{InactiveDestroy} = 1 if $self->{sqlgrey}{clean_method} ne 'sync';
+    $options->{InactiveDestroy} = 1
+	if ($self->{sqlgrey}{clean_method} ne 'sync');
 
     # we can't use connect_cached as we create another connection
     # in the child responsible for cleanups
