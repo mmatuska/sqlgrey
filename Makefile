@@ -41,7 +41,7 @@ manpage:
 
 clean:
 	rm -f sqlgrey.1
-	rm -f *~ init/*~ etc/*~
+	rm -f *~ .#* init/*~ etc/*~
 
 install: all
 	$(INSTALL) -d -m 755 $(SBINDIR)

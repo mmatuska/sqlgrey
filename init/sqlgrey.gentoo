@@ -14,13 +14,13 @@ start() {
 	# SQLite puts files in the working directory
 	cd ~sqlgrey
 	sqlgrey -d
-	eend
+	eend $?
 }
 
 stop() {
 	ebegin "Shutting down SQLgrey"
 	sqlgrey -k
-	eend
+	eend $?
 }
 
 # hack: seems Net::Server doesn't set REUSEADDR on socket?
