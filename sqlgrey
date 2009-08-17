@@ -36,7 +36,7 @@ use POSIX ':sys_wait_h';
 use vars qw(@ISA);
 @ISA = qw(Net::Server::Multiplex);
 
-my $VERSION = "1.7.6";
+my $VERSION = "1.7.7";
 my $software = 'SQLgrey-' . $VERSION;
 
 my $DB_VERSION = 3;
@@ -1015,13 +1015,53 @@ sub is_ipv6($) {
     return (($addr =~ /^[0123456789abcdef:]*$/) ? 1 : 0);
 }
 
+sub ipv6_normalise($) {
+    my $addr = shift;
+    $addr =~ s/::$/:/; # let split() return only one empty field at the end
+    my @splitted = split(/:/, $addr, -1);
+    my @splitted_norm;
+    foreach my $a (@splitted) {
+        if ($a ne "") {
+            push(@splitted_norm, sprintf("%04s", $a));
+        } else {
+            my $null_parts = 8 - $#splitted;
+            while($null_parts--) {
+                push(@splitted_norm, "0000");
+            }
+        }
+    }
+    return join(":", @splitted_norm);
+}
+
+sub ipv6_is_eui64($) {
+    ## Expects a normalised IPv6 address
+    my $addr = shift;
+    return $addr =~ /:[[:xdigit:]]{2}ff:fe[[:xdigit:]]{2}:[[:xdigit:]]{4}$/;
+}
+
+sub ipv6_is_global_unicast($) {
+    ## Expects a normalised IPv6 address
+    my $addr = shift;
+    return $addr =~ /^[23][[:xdigit:]]{3}/;
+}
+
+sub ipv6_smart($) {
+    my $addr = ipv6_normalise(shift);
+    if (ipv6_is_eui64($addr) and ipv6_is_global_unicast($addr)) {
+        ## For EUI64 return just the prefix/64
+        return join(":", (split(/:/, $addr))[0..3]);
+    } else {
+        ## For Non-EUI64 or Non-Global-Unicast return the address
+        return $addr;
+    }
+}
+
 sub class_c($) {
     my $addr = shift;
     if (is_ipv4($addr)) {
 	return join('.', (split(/\./, $addr))[0..2]);
     } elsif (is_ipv6($addr)) {
-	my @splitted = split(/:/, $addr);
-	return join(':', $splitted[0 .. ($#splitted - 2)]);
+	return ipv6_smart($addr);
     } else {
 	# don't know, don't touch...
 	return $addr;
@@ -2139,6 +2179,7 @@ sub client_identifier($$$) {
     my ($self, $addr, $fqdn) = @_;
     my $greymethod = $self->{sqlgrey}{greymethod};
     my $classc = class_c($addr);
+    my $is_ipv6 = is_ipv6($addr);
 
     if ($greymethod eq 'full') {
 	return $addr;
@@ -2151,6 +2192,11 @@ sub client_identifier($$$) {
 	    $self->mylog('grey', 3, "unknown RDNS: $addr");
 	    return $addr;
 	}
+
+        if ($is_ipv6) {
+            ## No other 'smart' checks are implemented for IPv6
+            return $classc;
+        }
 
 	# we need the last byte
 	my $last_part = get_last_addr_part($addr);
