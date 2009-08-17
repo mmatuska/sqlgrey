@@ -193,6 +193,7 @@ If you can't get a reliable domain name, just put the IP address in
 the /etc/sqlgrey/clients_ip_whitelist.local file. If you need to,
 you can add a whole class C network by putting a line with only the
 three first bytes of the IP addresses.
+IPv6 addresses are also supported in this file.
 
 As it's quite important I repeat: only look for the installed
 clients_*_whitelist files for reference and put your own entries

@@ -1718,6 +1718,9 @@ sub read_an_ip_whitelist($$) {
 	} elsif (/^\d+\.\d+\.\d+$/) {
 	    $whitelist->{C}{$_} = '';
 	    next;
+        } elsif (is_ipv6($_)) {
+            $whitelist->{IP}{ipv6_normalise($_)} = '';
+            # TODO: Support for prefixes, e.g. 2001:blah::/48
 	} else {
 	    $self->mylog('conf', 0, "unrecognised line in $file: $_");
 	}
@@ -1856,6 +1859,7 @@ sub is_in_fqdn_whitelists($$) {
 
 sub is_in_static_ip_whitelist($$) {
     my ($self, $ip) = @_;
+    $ip = ipv6_normalise($ip) if is_ipv6($ip);
     if (defined $self->{sqlgrey}{stat_ip_whitelist}->{IP}{$ip}) {
 	$self->mylog('whitelist', 3, "$ip in static IP whitelist");
 	return 1;
@@ -1869,6 +1873,7 @@ sub is_in_static_ip_whitelist($$) {
 
 sub is_in_dyn_ip_whitelist($$) {
     my ($self, $ip) = @_;
+    $ip = ipv6_normalise($ip) if is_ipv6($ip);
     if (defined $self->{sqlgrey}{dyn_ip_whitelist}->{IP}{$ip}) {
 	$self->mylog('whitelist', 3, "$ip in dynamic IP whitelist");
 	return 1;

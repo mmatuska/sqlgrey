@@ -69,6 +69,7 @@ fi
 * Mon Aug 17 2009 Michal Ludvig <mludvig@logix.net.nz>
  - 1.7.7 release getting ready
  - Reworked "smart" IPv6 address handling.
+ - Added IPv6 address support for clients_ip_whitelist(.local) file
 
 * Sun Aug 05 2007 Lionel Bouton <lionel-dev@bouton.name>
  - 1.7.6 release
