@@ -1,6 +1,6 @@
 * Mon Aug 17 2009 Michal Ludvig <mludvig@logix.net.nz>
  - 1.7.7 release getting ready
- - Reworked "smart" IPv6 address handling.
+ - Reworked "smart"/"class-c" IPv6 address handling.
  - Added IPv6 address support for clients_ip_whitelist(.local) file
  - client_ip_whitelist(.local) now supports address/prefix
    notation both for IPv4 and IPv6 addresses.
