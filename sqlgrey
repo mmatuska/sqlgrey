@@ -5,6 +5,7 @@
 # Copyright 2004 (c) ETH Zurich
 # Copyright 2004-2007 (c) Lionel Bouton
 # Parts copyrighted 2005-2007 Dan Faerch
+# Parts copyrighted 2009 Michal Ludvig
 
 #
 #    This program is free software; you can redistribute it and/or modify
@@ -30,6 +31,7 @@ use Pod::Usage;
 use Getopt::Long 2.25 qw(:config posix_default no_ignore_case);
 use Net::Server::Multiplex;
 use DBI;
+use Math::BigInt try => "GMP";
 
 use POSIX ':sys_wait_h';
 
@@ -1056,6 +1058,40 @@ sub ipv6_smart($) {
     }
 }
 
+sub ip_apply_prefix($$) {
+	my ($ip, $prefix) = @_;
+        $ip = ipv6_normalise($ip) if is_ipv6($ip);
+	return $ip if (not defined($prefix));
+	if (is_ipv4($ip)) {
+		if ($prefix < 0 or $prefix > 32) {
+			warn("Invalid IPv4 prefix length $ip/$prefix\n");
+			return $ip;
+		}
+		my $mask = 2**32 - 2**(32-$prefix);
+		my $ipint=unpack("N", pack("C4", split(/\./, $ip)));
+		$ipint &= $mask;
+		return join(".", unpack("C4", pack("N", $ipint)));
+	} elsif (is_ipv6($ip)) {
+		if ($prefix < 0 or $prefix > 128) {
+			warn("Invalid IPv6 prefix length $ip/$prefix\n");
+			return $ip;
+		}
+		my $mask = Math::BigInt->bpow(2, 128) - (Math::BigInt->bpow(2, 128-$prefix));
+		my $iphex = ipv6_normalise($ip);
+		$iphex =~ s/://g;
+		my $ipint = Math::BigInt->from_hex("0x$iphex");
+		# Apply mask to the IP
+		$ip = $ipint->band($mask);	
+		# Convert to string, remove leading 0x and normalise to full-length
+		$ip = sprintf("%032s", substr($ip->as_hex(),2));
+		# Make it look like a normalised IPv6 address
+		$ip = join(":", unpack("a4" x 8, $ip));
+		return $ip;
+	}
+	warn("$ip - unknown address family\n");
+	return $ip;
+}
+
 sub class_c($) {
     my $addr = shift;
     if (is_ipv4($addr)) {
@@ -1693,37 +1729,69 @@ sub read_dyn_ip_whitelist($) {
 	$self->read_an_ip_whitelist($dyn_ip_whitelist_file);
 }
 
+sub lookup_ip_in_whitelist($$) {
+    my ($whitelist, $ip) = @_;
+    my $ip_ver = is_ipv4($ip) ? 4 : 6;
+    #my %w = ($whitelist->{$ip_ver});
+	foreach my $prefix (sort(keys(%{$whitelist->{$ip_ver}}))) {
+		my $ip_masked = ip_apply_prefix($ip, $prefix);
+		return $prefix if (defined($whitelist->{$ip_ver}{$prefix}{$ip_masked}));
+	}
+	return -1;
+}
+
+sub add_ip_to_whitelist($$$) {
+    my ($whitelist, $ip, $prefixlen) = @_;
+
+    my $ip_masked = ip_apply_prefix($ip, $prefixlen);
+    my $ip_ver = is_ipv4($ip) ? 4 : 6;
+    if (not defined($whitelist->{$ip_ver}{$prefixlen})) {
+        $whitelist->{$ip_ver}{$prefixlen} = {};
+	}
+	$whitelist->{$ip_ver}{$prefixlen}{$ip_masked} = 1;
+}
+
 sub read_an_ip_whitelist($$) {
     my $self = shift;
     my $file = shift;
     # Prepare empty whitelist
     my $whitelist;
-    $whitelist->{IP} = {};
-    $whitelist->{C} = {};
+    $whitelist->{4} = undef;
+    $whitelist->{6} = undef;
+    my ($ip, $prefixlen);
     if (! open (FILE, '<' . $file)) {
 	$self->mylog('conf', 1, "warning: $file not found or unreadable");
 	return $whitelist;
     }
     while (<FILE>) {
-	chomp;
-	# strip comments
-	s/#.*//;
-	# strip spaces
-	s/\s+//;
-	# Anything left ?
-	next unless length;
-	if (/^\d+\.\d+\.\d+\.\d+$/) {
-	    $whitelist->{IP}{$_} = '';
-	    next;
-	} elsif (/^\d+\.\d+\.\d+$/) {
-	    $whitelist->{C}{$_} = '';
-	    next;
+        chomp;
+        # strip comments
+        s/#.*//;
+        # strip spaces
+        s/\s+//g;
+        # Anything left ?
+        next unless length;
+        $ip = undef;
+        if (/^(.*)\/(\d+)$/) {
+            $ip = $1;
+            $prefixlen = $2;
+        } elsif (/^\d+\.\d+\.\d+\.\d+$/) {
+            $ip = $_;
+            $prefixlen = 32;
+        } elsif (/^\d+\.\d+\.\d+$/) {
+            $ip = "$_.0";
+            $prefixlen = 24;
         } elsif (is_ipv6($_)) {
-            $whitelist->{IP}{ipv6_normalise($_)} = '';
-            # TODO: Support for prefixes, e.g. 2001:blah::/48
-	} else {
-	    $self->mylog('conf', 0, "unrecognised line in $file: $_");
-	}
+            $ip = $_;
+            $prefixlen = 128;
+        }
+        if (not defined($ip) or not $prefixlen >= 0 or
+                not ((is_ipv4($ip) and $prefixlen <= 32) or 
+                     (is_ipv6($ip) and $prefixlen <= 128))) {
+            $self->mylog('conf', 0, "unrecognised line in $file: $_");
+            next;
+        }
+        add_ip_to_whitelist($whitelist, $ip, $prefixlen);
     }
     close FILE;
     return $whitelist;
@@ -1859,13 +1927,8 @@ sub is_in_fqdn_whitelists($$) {
 
 sub is_in_static_ip_whitelist($$) {
     my ($self, $ip) = @_;
-    $ip = ipv6_normalise($ip) if is_ipv6($ip);
-    if (defined $self->{sqlgrey}{stat_ip_whitelist}->{IP}{$ip}) {
-	$self->mylog('whitelist', 3, "$ip in static IP whitelist");
-	return 1;
-    }
-    if (defined $self->{sqlgrey}{stat_ip_whitelist}->{C}{class_c($ip)}) {
-	$self->mylog('whitelist', 3, "$ip in static class-C whitelist");
+    if (lookup_ip_in_whitelist($self->{sqlgrey}{stat_ip_whitelist}, $ip) >= 0) {
+	$self->mylog('whitelist', 3, "$ip in static whitelist");
 	return 1;
     }
     return 0;
@@ -1873,13 +1936,8 @@ sub is_in_static_ip_whitelist($$) {
 
 sub is_in_dyn_ip_whitelist($$) {
     my ($self, $ip) = @_;
-    $ip = ipv6_normalise($ip) if is_ipv6($ip);
-    if (defined $self->{sqlgrey}{dyn_ip_whitelist}->{IP}{$ip}) {
-	$self->mylog('whitelist', 3, "$ip in dynamic IP whitelist");
-	return 1;
-    }
-    if (defined $self->{sqlgrey}{dyn_ip_whitelist}->{C}{class_c($ip)}) {
-	$self->mylog('whitelist', 3, "$ip in dynamic class-C whitelist");
+    if (lookup_ip_in_whitelist($self->{sqlgrey}{dyn_ip_whitelist}, $ip) >= 0) {
+	$self->mylog('whitelist', 3, "$ip in dynamic whitelist");
 	return 1;
     }
     return 0;
