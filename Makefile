@@ -7,7 +7,6 @@ INITDIR = $(ETCDIR)/init.d
 MANDIR = $(ROOTDIR)/usr/share/man/man1
 
 VERSION := $(shell cat VERSION)
-TBZ2 = sqlgrey-$(VERSION).tar.bz2
 
 default:
 	@echo "See INSTALL textfile";
@@ -15,26 +14,16 @@ default:
 all: manpage update-version
 
 update-version:
-	cat sqlgrey | sed 's/^my $$VERSION = .*;/my $$VERSION = "$(VERSION)";/' > sqlgrey.new
-	mv sqlgrey.new sqlgrey
-	chmod a+x sqlgrey
-	cat sqlgrey.spec | sed 's/^%define ver  .*/%define ver  $(VERSION)/' > sqlgrey.spec.new
-	mv sqlgrey.spec.new sqlgrey.spec
-	cat sqlgrey-logstats.pl | sed 's/^my $$VERSION = .*;/my $$VERSION = "$(VERSION)";/' > sqlgrey-logstats.pl.new
-	mv sqlgrey-logstats.pl.new sqlgrey-logstats.pl
-	chmod a+x sqlgrey-logstats.pl
+	sed -i 's/^my $$VERSION = .*;/my $$VERSION = "$(VERSION)";/' sqlgrey
+	sed -i 's/^%define ver  .*/%define ver  $(VERSION)/' sqlgrey.spec
+	sed -i 's/^my $$VERSION = .*;/my $$VERSION = "$(VERSION)";/' sqlgrey-logstats.pl
 
 use_dbcluster:
-	cat sqlgrey | sed 's/^use DBI;/use DBIx::DBCluster;/' > sqlgrey.new
-	mv sqlgrey.new sqlgrey
-	chmod a+x sqlgrey
+	sed -i 's/^use DBI;/use DBIx::DBCluster;/' sqlgrey
 	cd lib/DBIx-DBCluster-0.01/;perl Makefile.PL;make;make install
 
 use_dbi:
-	cat sqlgrey | sed 's/^use DBIx::DBCluster;/use DBI;/' > sqlgrey.new
-	mv sqlgrey.new sqlgrey
-	chmod a+x sqlgrey
-	                        
+	sed -i 's/^use DBIx::DBCluster;/use DBI;/' sqlgrey
 
 manpage:
 	perldoc -u sqlgrey | pod2man -n sqlgrey > sqlgrey.1
@@ -78,8 +67,17 @@ debian-install: install
 	ln -s ../init.d/sqlgrey /etc/rc5.d/S20sqlgrey
 	ln -s ../init.d/sqlgrey /etc/rc5.d/K20sqlgrey
 
-tbz2: update-version clean
-	cd ..;ln -s sqlgrey sqlgrey-$(VERSION);tar  cjhf  $(TBZ2) --exclude=CVS sqlgrey-$(VERSION);rm sqlgrey-$(VERSION)
+dist: update-version clean
+	##
+	## TAG the revision first with:
+	## [1mgit tag sqlgrey_$(VERSION)[0m
+	##
+	## NOTE: this will create an archive from the
+	##       state of repository, ignoring your
+	##       uncommited changes!!!
+	@-mkdir -p dist
+	git archive sqlgrey_$(VERSION) --prefix=sqlgrey-$(VERSION)/ -o dist/sqlgrey-$(VERSION).tar
+	gzip -v dist/sqlgrey-$(VERSION).tar
 
-rpm: tbz2
-	rpmbuild -ta ../$(TBZ2)
+rpm: dist
+	rpmbuild -ta dist/sqlgrey-$(VERSION).tar.gz
