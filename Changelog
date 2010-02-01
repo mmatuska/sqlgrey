@@ -1,3 +1,6 @@
+* Mon Feb 01 2010 Michal Ludvig <mludvig@logix.net.nz>
+ - Upgraded VERSION to 1.8.0-rc2
+ - Reverted GNU sed syntax in Makefile
 * Sat Jan 23 2010 Michal Ludvig <mludvig@logix.net.nz>
  - Upgraded VERSION to 1.8.0-rc1
  - 'make dist' now creates sqlgrey-$VERSION.tar.gz with
