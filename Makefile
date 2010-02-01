@@ -14,16 +14,25 @@ default:
 all: manpage update-version
 
 update-version:
-	sed -i 's/^my $$VERSION = .*;/my $$VERSION = "$(VERSION)";/' sqlgrey
-	sed -i 's/^%define ver  .*/%define ver  $(VERSION)/' sqlgrey.spec
-	sed -i 's/^my $$VERSION = .*;/my $$VERSION = "$(VERSION)";/' sqlgrey-logstats.pl
+	cat sqlgrey | sed 's/^my $$VERSION = .*;/my $$VERSION = "$(VERSION)";/' > sqlgrey.new
+	mv sqlgrey.new sqlgrey
+	chmod a+x sqlgrey
+	cat sqlgrey.spec | sed 's/^%define ver  .*/%define ver  $(VERSION)/' > sqlgrey.spec.new
+	mv sqlgrey.spec.new sqlgrey.spec
+	cat sqlgrey-logstats.pl | sed 's/^my $$VERSION = .*;/my $$VERSION = "$(VERSION)";/' > sqlgrey-logstats.pl.new
+	mv sqlgrey-logstats.pl.new sqlgrey-logstats.pl
+	chmod a+x sqlgrey-logstats.pl
 
 use_dbcluster:
-	sed -i 's/^use DBI;/use DBIx::DBCluster;/' sqlgrey
+	cat sqlgrey | sed 's/^use DBI;/use DBIx::DBCluster;/' > sqlgrey.new
+	mv sqlgrey.new sqlgrey
+	chmod a+x sqlgrey
 	cd lib/DBIx-DBCluster-0.01/;perl Makefile.PL;make;make install
 
 use_dbi:
-	sed -i 's/^use DBIx::DBCluster;/use DBI;/' sqlgrey
+	cat sqlgrey | sed 's/^use DBIx::DBCluster;/use DBI;/' > sqlgrey.new
+	mv sqlgrey.new sqlgrey
+	chmod a+x sqlgrey
 
 manpage:
 	perldoc -u sqlgrey | pod2man -n sqlgrey > sqlgrey.1
