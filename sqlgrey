@@ -73,6 +73,7 @@ $dflt{db_type}            = 'Pg';
 $dflt{db_name}            = 'sqlgrey';
 $dflt{db_host}            = 'localhost';
 $dflt{db_port}            = 'default';
+$dflt{db_dsn}             = '';
 $dflt{db_user}            = 'sqlgrey';
 $dflt{db_pass}            = '';
 $dflt{db_prepare_cache}   = 0;
@@ -776,20 +777,25 @@ sub upgrade2($) {
 sub cnctinfo($) {
 # Tested with PostgreSQL, MySQL and SQLite
     my $self = shift;
-    my $dsn = 'DBI:' . $self->{sqlgrey}{db_type};
-    # only MySQL uses database=
-    if ($self->MySQL()) {
-        $dsn .= ':database=';
+    my $dsn;
+    if ($self->{sqlgrey}{db_dsn} ne '') {
+	$dsn = $self->{sqlgrey}{db_dsn};
     } else {
-        $dsn .= ':dbname=';
-    }
-    $dsn .= $self->{sqlgrey}{db_name};
-    # only SQLite doesn't require a hostname or port
-    if (! $self->SQLite()) {
-        $dsn .= ';host=' . $self->{sqlgrey}{db_host};
-        if ($self->{sqlgrey}{db_port} ne "default") {
-            $dsn .= ';port=' . $self->{sqlgrey}{db_port};
-        }
+	$dsn = 'DBI:' . $self->{sqlgrey}{db_type};
+	# only MySQL uses database=
+	if ($self->MySQL()) {
+	    $dsn .= ':database=';
+	} else {
+	    $dsn .= ':dbname=';
+	}
+	$dsn .= $self->{sqlgrey}{db_name};
+	# only SQLite doesn't require a hostname or port
+	if (! $self->SQLite()) {
+	    $dsn .= ';host=' . $self->{sqlgrey}{db_host};
+	    if ($self->{sqlgrey}{db_port} ne "default") {
+	        $dsn .= ';port=' . $self->{sqlgrey}{db_port};
+	    }
+	}
     }
     return $dsn;
 }
@@ -2653,6 +2659,7 @@ sub main()
             db_name         => $dflt{db_name},
             db_host         => $dflt{db_host},
             db_port         => $dflt{db_port},
+            db_dsn          => $dflt{db_dsn},
 	    db_user         => $dflt{db_user},
             db_pass         => $dflt{db_pass},
 	    db_available    => 1, # used to trigger e-mails
