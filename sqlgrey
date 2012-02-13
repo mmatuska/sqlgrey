@@ -329,15 +329,15 @@ sub drop_table($$) {
 # Database type queries
 sub SQLite($) {
     my $self = shift;
-    return ($self->{sqlgrey}{db_type} eq 'SQLite');
+    return ($self->{sqlgrey}{dbh}->{Driver}->{Name} eq 'SQLite');
 }
 sub PostgreSQL($) {
     my $self = shift;
-    return ($self->{sqlgrey}{db_type} eq 'Pg');
+    return ($self->{sqlgrey}{dbh}->{Driver}->{Name} eq 'Pg');
 }
 sub MySQL($) {
     my $self = shift;
-    return ($self->{sqlgrey}{db_type} eq 'mysql');
+    return ($self->{sqlgrey}{dbh}->{Driver}->{Name} eq 'mysql');
 }
 
 # build a SQL representation of a timestamp with a given
