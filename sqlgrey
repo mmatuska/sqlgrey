@@ -2542,7 +2542,7 @@ sub main()
     # options parsing
     my %opt = ();
     GetOptions(\%opt, 'help|h', 'man', 'version', 'configfile|f=s',
-	'daemonize|d', 'kill|k')
+	'daemonize|d', 'kill|k', 'pidfile|p=s')
 	or exit(1);
 
     if ($opt{help})    { pod2usage(1) }
@@ -2562,6 +2562,11 @@ sub main()
             1 if ($DBIx::DBCluster::DEBUG);
 
             $dflt{dont_db_clean} = (-e $dflt{conf_dir}."/dont_db_clean");
+    }
+
+    # Check pidfile from command line arguments
+    if (defined $opt{pidfile}) {
+	$dflt{pidfile} = $opt{pidfile};
     }
 
     # Are we on a killing spray ?
@@ -2784,6 +2789,8 @@ B<sqlgrey> [I<options>...]
      --man                  display man page
      --version              output version information and exit
  -d, --daemonize            run in the background
+ -p, --pidfile=FILE         write process ID to FILE
+                            (overrides 'pidfile' in sqlgrey.conf)
  -k, --kill                 kill a running sqlgrey
                             (identified by 'pidfile' content)
  -f, --configfile=FILE      read config from FILE
