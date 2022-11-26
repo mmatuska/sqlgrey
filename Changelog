@@ -1,3 +1,6 @@
+* Sat Nov 26 2022 Rui Miguel Seabra <rms@1407.org>
+ - add in MariaDB support
+ - add in what looks like unreleased/Fedora changes
 * Mon Feb 01 2010 Michal Ludvig <mludvig@logix.net.nz>
  - Upgraded VERSION to 1.8.0-rc2
  - Reverted GNU sed syntax in Makefile
