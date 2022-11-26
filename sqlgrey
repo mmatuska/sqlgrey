@@ -39,7 +39,7 @@ use POSIX ':sys_wait_h';
 use vars qw(@ISA);
 @ISA = qw(Net::Server::Multiplex);
 
-my $VERSION = "1.8.0-rc2";
+my $VERSION = "1.8.1";
 my $software = 'SQLgrey-' . $VERSION;
 
 my $DB_VERSION = 3;
@@ -204,11 +204,11 @@ sub db_unavailable($) {
     if ($self->{sqlgrey}{db_available}) {
 	if (! defined $self->{sqlgrey}{dbh}) {
 	    $self->{sqlgrey}{warn_db} && $self->sendmail('SQLgrey lost database',
-							 'SQLgrey lost database connection to: ' . $self->cnctinfo());
+							 'SQLgrey lost database connection to: ' . $self->{sqlgrey}{db_dsn});
 	} else {
 	    $self->disconnectdb();
 	    $self->{sqlgrey}{warn_db} && $self->sendmail('SQLgrey database error',
-							 'SQLgrey encountered an SQL error and triggered a reconnection to: ' . $self->cnctinfo());
+							 'SQLgrey encountered an SQL error and triggered a reconnection to: ' . $self->{sqlgrey}{db_dsn});
 	}
 	$self->{sqlgrey}{db_available} = 0;
     }
@@ -219,7 +219,7 @@ sub db_available($) {
 
     if (! $self->{sqlgrey}{db_available}) {
 	$self->{sqlgrey}{warn_db} && $self->sendmail('SQLgrey recovered DB',
-			'SQLgrey established connection to: ' . $self->cnctinfo());
+			'SQLgrey established connection to: ' . $self->{sqlgrey}{db_dsn});
 	$self->{sqlgrey}{db_available} = 1;
     }
 }
@@ -329,15 +329,15 @@ sub drop_table($$) {
 # Database type queries
 sub SQLite($) {
     my $self = shift;
-    return ($self->{sqlgrey}{dbh}->{Driver}->{Name} eq 'SQLite');
+    return ($self->{sqlgrey}{db_type} eq 'SQLite');
 }
 sub PostgreSQL($) {
     my $self = shift;
-    return ($self->{sqlgrey}{dbh}->{Driver}->{Name} eq 'Pg');
+    return ($self->{sqlgrey}{db_type} eq 'Pg');
 }
 sub MySQL($) {
     my $self = shift;
-    return ($self->{sqlgrey}{dbh}->{Driver}->{Name} eq 'mysql');
+    return ( ($self->{sqlgrey}{db_type} eq 'mysql') or ($self->{sqlgrey}{db_type} eq 'MariaDB'));
 }
 
 # build a SQL representation of a timestamp with a given
@@ -774,33 +774,6 @@ sub upgrade2($) {
     $self->setconfig('version','3');
 }
 
-# Build a connect string for DBI
-sub cnctinfo($) {
-# Tested with PostgreSQL, MySQL and SQLite
-    my $self = shift;
-    my $dsn;
-    if ($self->{sqlgrey}{db_dsn} ne '') {
-	$dsn = $self->{sqlgrey}{db_dsn};
-    } else {
-	$dsn = 'DBI:' . $self->{sqlgrey}{db_type};
-	# only MySQL uses database=
-	if ($self->MySQL()) {
-	    $dsn .= ':database=';
-	} else {
-	    $dsn .= ':dbname=';
-	}
-	$dsn .= $self->{sqlgrey}{db_name};
-	# only SQLite doesn't require a hostname or port
-	if (! $self->SQLite()) {
-	    $dsn .= ';host=' . $self->{sqlgrey}{db_host};
-	    if ($self->{sqlgrey}{db_port} ne "default") {
-	        $dsn .= ';port=' . $self->{sqlgrey}{db_port};
-	    }
-	}
-    }
-    return $dsn;
-}
-
 # Global DB Init code
 sub initdb($) {
     my $self = shift;
@@ -823,7 +796,7 @@ sub connectdb($) {
     no warnings 'uninitialized'; #Perl will spew warn's if running DBI only
     if ($dflt{db_cluster} ne 'on') {
 
-    	$self->{sqlgrey}{dbh} = DBI->connect($self->cnctinfo(),
+    	$self->{sqlgrey}{dbh} = DBI->connect($self->{sqlgrey}{db_dsn},
 					     $self->{sqlgrey}{db_user},
 					     $self->{sqlgrey}{db_pass},
 					     $options)
@@ -837,6 +810,7 @@ sub connectdb($) {
         $self->mylog('dbaccess', 3, "Read_hosts: ".join(', ', @read_hosts));
 
 	#Setting up cluster db's
+        no warnings 'once';
     	$DBIx::DBCluster::CLUSTERS = {
         		"$self->{sqlgrey}{db_host}" => {
             		'WRITE_HOSTS'  => [$self->{sqlgrey}{db_host}],
@@ -849,7 +823,7 @@ sub connectdb($) {
     	$DBIx::DBCluster::WRITE_HOSTS_NEVER_READ=1;
 
     	$self->{sqlgrey}{dbh} =
-	    DBIx::DBCluster->connect($self->cnctinfo(),
+	    DBIx::DBCluster->connect($self->{sqlgrey}{db_dsn},
 				     $self->{sqlgrey}{db_user},
 				     $self->{sqlgrey}{db_pass},
 				     $options)
@@ -2564,6 +2538,7 @@ sub main()
     no warnings 'uninitialized'; #Perl will spew warn's if running DBI only
     if ($dflt{db_cluster} eq 'on') {
             # if loglevel >= 4, enable debugging for DBCluster
+            no warnings 'once';
             $DBIx::DBCluster::DEBUG = ($dflt{'loglevel'}>3)?1:0;
 
             # Ugly hack to make perl shut up about about "possible typo".
@@ -2592,15 +2567,44 @@ sub main()
 
     # bind only localhost if no host is specified
     if(defined $dflt{inet}) {
-	$dflt{proto} = "tcp";
+	$proto = $dflt{proto};
 	if ($dflt{inet}=~/^\d+$/) {
-	    $dflt{port} = "localhost:$dflt{inet}";
+	    $port = "localhost:$dflt{inet}";
 	} else {
-	    $dflt{port} = $dflt{inet};
+	    $port = $dflt{inet};
 	}
     } elsif (defined $dflt{unix}) {
-	$dflt{proto} = "unix";
-	$dflt{port} = $dflt{unix} ."|unix";
+	$proto = "unix";
+	$port = $dflt{unix} ."|unix";
+    }
+
+    # Make a new DSN or verify supplied DSN
+    if ($dflt{db_dsn} ne '') {
+	my @res = DBI->parse_dsn($dflt{db_dsn})
+            or die ('Error parsing db_dsn');
+	if ((defined $res[1]) && $res[1] ne '') {
+	    $dflt{db_type} = $res[1];
+	} else {
+	    die ('db_dsn is missing a database driver');
+	}
+    } else {
+        my $dsn;
+	$dsn = 'DBI:' . $dflt{db_type};
+	# only MySQL uses database=
+	if ( ($dflt{db_type} eq 'mysql') or ($dflt{db_type} eq 'MariaDB') ) {
+	    $dsn .= ':database=';
+	} else {
+	    $dsn .= ':dbname=';
+	}
+	$dsn .= $dflt{db_name};
+	# only SQLite doesn't require a hostname or port
+	if ($dflt{db_type} ne 'SQLite') {
+	    $dsn .= ';host=' . $dflt{db_host};
+	    if ($dflt{db_port} ne "default") {
+	        $dsn .= ';port=' . $dflt{db_port};
+	    }
+	}
+	$dflt{db_dsn} = $dsn;
     }
 
     # set the actual reject code values
